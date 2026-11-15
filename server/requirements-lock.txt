@@ -10,7 +10,6 @@ multidict==7.2.1
 propcache==0.5.4
 PyJWT==2.15.1
 requests==2.34.2
-twilio==9.13.0
 urllib3==2.8.0
 yarl==1.25.1
 annotated-doc==0.0.6

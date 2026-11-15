@@ -47,14 +47,6 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
         yield
 
     app = FastAPI(title="SafetyHack Voice", lifespan=lifespan)
-    # The P2P mode must boot without the optional Twilio SDK installed.
-    try:
-        from server.telephony import install_telephony
-    except ModuleNotFoundError as exc:
-        if exc.name != "twilio" and not (exc.name or "").startswith("twilio."):
-            raise
-    else:
-        install_telephony(app)
     install_rtc(app)
 
     @app.get("/health")

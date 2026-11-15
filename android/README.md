@@ -15,8 +15,7 @@ query, credentials or fragment. The wrapper opens `/rtc?role=receiver` on that o
 6. Keep the Android application open. Backgrounding, Back and rotation close the page and call.
    Return to setup and explicitly reopen to reconnect. There is no push or always-on incoming mode.
 
-WebRTC replaces the paid Twilio calling SDK. There are no Firebase/FCM or Twilio dependencies,
-keys, registration, or call services in this Android app. Hosting, ASR and any TURN relay still
+The Android app uses WebRTC and has no external calling-service SDK or registration. Hosting, ASR and any TURN relay still
 depend on your deployment; free peer-to-peer connectivity cannot be guaranteed across every NAT.
 
 ## Page integration contract

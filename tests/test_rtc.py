@@ -241,26 +241,6 @@ def test_hangup_closes_audio():
             assert ws.receive_json()["reason"] == "call-ended"
 
 
-def test_optional_twilio_import():
-    import subprocess
-    import sys
-    code = """
-import builtins
-original = builtins.__import__
-def restricted(name, *args, **kwargs):
-    if name == 'twilio' or name.startswith('twilio.'):
-        raise ModuleNotFoundError('optional dependency absent', name='twilio')
-    return original(name, *args, **kwargs)
-builtins.__import__ = restricted
-from server.app import create_app
-from fastapi.testclient import TestClient
-with TestClient(create_app(token='long-enough-test-token')) as client:
-    assert client.get('/api/rtc/status').status_code == 200
-"""
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=20)
-    assert result.returncode == 0, result.stderr
-
-
 @pytest.mark.parametrize("path", ["/ws/rtc?token=hidden", "/ws/rtc-audio?token=hidden"])
 def test_query_credentials_rejected(path):
     with TestClient(create_app(token=TOKEN)) as client:
