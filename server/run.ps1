@@ -17,6 +17,7 @@ $env:ASR_MODEL = $Model
 $env:ASR_DEVICE = $Device
 $env:ASR_COMPUTE_TYPE = if ($Device -eq 'cuda') { 'float16' } else { 'int8' }
 Write-Host "Mode: $Mode | local server http://127.0.0.1:$Port"
+Write-Host "ASR logs: MODEL_LOADING -> MODEL_READY; RTC_PCM_FIRST -> INFERENCE_START -> INFERENCE_DONE. Diagnostic mode does not load Whisper."
 Write-Host "Enter this session token in the Android app: $env:SAFETY_TOKEN"
 Write-Host "WebRTC caller: /rtc?role=caller | receiver: /rtc?role=receiver"
 Write-Host "Use the same room and session token on both sides. Keep the Android receiver open."

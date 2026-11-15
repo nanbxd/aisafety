@@ -1,6 +1,7 @@
 """Chunked Whisper adapter. It is not native streaming recognition."""
 import os
 import numpy as np
+from server.diagnostics import log
 
 
 class WhisperTranscriber:
@@ -15,8 +16,17 @@ class WhisperTranscriber:
 
     def __call__(self, pcm: bytes, language: str) -> str:
         audio = np.frombuffer(pcm, dtype="<i2").astype(np.float32) / 32768.0
-        segments, _ = self.model.transcribe(
+        segments, info = self.model.transcribe(
             audio, language=language, beam_size=1, vad_filter=True,
             condition_on_previous_text=False,
         )
-        return " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.7).strip()
+        parts = []
+        count = rejected = 0
+        for segment in segments:
+            count += 1
+            if segment.no_speech_prob < 0.7:
+                parts.append(segment.text.strip())
+            else:
+                rejected += 1
+        log.info("ASR_SEGMENTS total=%d filtered_no_speech=%d vad_seconds=%.2f", count, rejected, getattr(info, "duration_after_vad", 0) or 0)
+        return " ".join(parts).strip()

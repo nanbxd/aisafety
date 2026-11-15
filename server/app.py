@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 
 from server.risk import RiskEngine
 from server.rtc import install_rtc
+from server.diagnostics import log, error
 
 SAMPLE_RATE = 16000
 BYTES_PER_SECOND = SAMPLE_RATE * 2
@@ -38,12 +39,21 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
             raise RuntimeError("Set SAFETY_TOKEN to a random secret of at least 16 characters.")
         app.state.transcribe = transcriber
         mode = os.getenv("ASR_MODE", "diagnostic")
+        log.info("ASR_STARTUP requested_mode=%s injected_transcriber=%s", mode if mode in {"diagnostic", "whisper"} else "invalid", transcriber is not None)
         if mode not in {"diagnostic", "whisper"}:
             raise RuntimeError("ASR_MODE must be diagnostic or whisper")
         if transcriber is None and mode == "whisper":
             from server.asr import WhisperTranscriber
-            app.state.transcribe = await asyncio.to_thread(WhisperTranscriber)
+            began = time.monotonic()
+            log.info("ASR_MODEL_LOADING")
+            try:
+                app.state.transcribe = await asyncio.to_thread(WhisperTranscriber)
+            except Exception as exc:
+                error("ASR_MODEL_LOAD_FAILED", exc)
+                raise
+            log.info("ASR_MODEL_READY load_ms=%d", (time.monotonic() - began) * 1000)
         app.state.busy = False
+        log.info("ASR_SERVICE_READY enabled=%s", app.state.transcribe is not None)
         yield
 
     app = FastAPI(title="SafetyHack Voice", lifespan=lifespan)

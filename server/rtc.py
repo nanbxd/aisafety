@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.risk import RiskEngine
+from server.diagnostics import log, error
 
 RING_SECONDS = 60
 AUTH_SECONDS = 10
@@ -301,15 +302,24 @@ def install_rtc(app):
     @app.websocket("/ws/rtc-audio")
     async def audio(ws: WebSocket):
         from server.app import level
+        trace = secrets.token_hex(4)
         if not allowed_origin(ws) or ws.query_params:
+            log.warning("RTC_AUDIO_REJECT trace=%s reason=origin_or_query", trace)
             await ws.close(code=1008)
             return
         await ws.accept()
+        log.info("RTC_AUDIO_SOCKET trace=%s waiting_for_start=true", trace)
         worker = None
         acquired = False
         queue = asyncio.Queue(maxsize=3)
         disconnected = False
         send_lock = asyncio.Lock()
+        phase = "waiting_for_start"
+        total = 0
+        packet_count = 0
+        last_pcm = None
+        last_progress = time.monotonic()
+        inference_started = None
 
         async def emit(event):
             if not disconnected:
@@ -318,13 +328,16 @@ def install_rtc(app):
 
         try:
             start = await read_json(ws)
+            phase = "validating_format"
             if any(start.get(k) != v for k, v in {"type": "start", "sample_rate": 16000, "channels": 1, "format": "pcm_s16le"}.items()) or start.get("consent") is not True or start.get("language", "ru") not in {"ru", "kk", "en"}:
                 raise ValueError("Expected consent and PCM s16le, 16000 Hz, mono")
             async with hub.lock:
+                phase = "validating_ticket"
                 ticket = start.get("audio_ticket")
                 if not hub.accepted or "receiver" not in hub.peers or start.get("room") != hub.room or start.get("call_id") != hub.call_id or not isinstance(ticket, str) or not hub.ticket or not hmac.compare_digest(ticket.encode(), hub.ticket.encode()):
                     raise ValueError("Invalid receiver audio ticket")
                 if app.state.busy:
+                    log.warning("RTC_AUDIO_BUSY trace=%s ticket_consumed=false", trace)
                     await fail(ws, "ASR is busy", error_code="busy")
                     return
                 hub.ticket = None  # Single use, never reconnect active audio implicitly.
@@ -332,26 +345,44 @@ def install_rtc(app):
                 acquired = True
                 ended = hub.audio_end
             language = start.get("language", "ru")
+            phase = "streaming"
+            log.info("RTC_AUDIO_READY trace=%s asr_enabled=%s language=%s sample_rate=16000", trace, app.state.transcribe is not None, language)
             await emit({"type": "ready", "mode": "whisper" if app.state.transcribe else "diagnostic", "message": "ASR ready" if app.state.transcribe else "ASR is not configured; no transcription or risk analysis"})
             risk = RiskEngine()
 
             async def process():
+                nonlocal inference_started
                 try:
                     while True:
                         item = await queue.get()
                         if item is None:
                             return
                         pcm, offset = item
-                        if ended.is_set() or app.state.transcribe is None or level(pcm) < -55:
+                        db = level(pcm)
+                        if ended.is_set() or app.state.transcribe is None or db < -55:
+                            reason = "call_ended" if ended.is_set() else "asr_disabled" if app.state.transcribe is None else "silence"
+                            log.info("ASR_WINDOW_SKIP trace=%s offset=%.1f dbfs=%.1f reason=%s", trace, offset, db, reason)
                             continue
                         began = time.monotonic()
-                        text = await asyncio.to_thread(app.state.transcribe, pcm, language)
+                        inference_started = began
+                        log.info("ASR_INFERENCE_START trace=%s offset=%.1f audio_seconds=%.2f dbfs=%.1f queue=%d", trace, offset, len(pcm) / BPS, db, queue.qsize())
+                        try:
+                            text = await asyncio.to_thread(app.state.transcribe, pcm, language)
+                        except Exception as exc:
+                            error("ASR_INFERENCE_FAILED", exc, trace=trace)
+                            raise
+                        finally:
+                            inference_started = None
+                        elapsed = time.monotonic() - began
+                        log.info("ASR_INFERENCE_DONE trace=%s processing_ms=%d text_chars=%d empty=%s realtime_ratio=%.2f", trace, elapsed * 1000, len(text), not bool(text), elapsed / (len(pcm) / BPS))
                         if text and not ended.is_set() and not disconnected:
                             await emit({"type": "transcript", "text": text, "offset_seconds": offset, "window_seconds": len(pcm) / BPS, "processing_ms": round((time.monotonic() - began) * 1000)})
                             await emit(risk.assess(text))
+                            log.info("ASR_RESULT_SENT trace=%s offset=%.1f", trace, offset)
                 finally:
                     # This task is never cancelled: to_thread must truly finish.
                     app.state.busy = False
+                    log.info("ASR_SLOT_RELEASED trace=%s", trace)
 
             worker = asyncio.create_task(process())
             buffer = bytearray()
@@ -359,6 +390,10 @@ def install_rtc(app):
             began = time.monotonic()
             frames = deque()
             while True:
+                now = time.monotonic()
+                if now - last_progress >= 5:
+                    log.info("RTC_AUDIO_PROGRESS trace=%s frames=%d audio_seconds=%.2f buffer_bytes=%d queue=%d pcm_idle_seconds=%.1f inference_seconds=%.1f", trace, packet_count, total / BPS, len(buffer), queue.qsize(), now - (last_pcm if last_pcm is not None else began), now - inference_started if inference_started is not None else 0)
+                    last_progress = now
                 if ended.is_set():
                     break
                 if worker.done():
@@ -394,6 +429,10 @@ def install_rtc(app):
                 if len(frames) > 400:
                     raise ValueError("Audio frame rate exceeded")
                 total += len(raw)
+                packet_count += 1
+                last_pcm = now
+                if packet_count == 1:
+                    log.info("RTC_PCM_FIRST trace=%s bytes=%d dbfs=%.1f", trace, len(raw), level(raw))
                 if total > BPS * 900 or total > BPS * ((time.monotonic() - began) * 1.5 + 4):
                     raise ValueError("Audio duration or rate exceeded")
                 buffer.extend(raw)
@@ -408,11 +447,14 @@ def install_rtc(app):
                 await ws.close()
         except WebSocketDisconnect:
             disconnected = True
-        except (ValueError, TypeError, TimeoutError, asyncio.QueueFull):
+        except (ValueError, TypeError, TimeoutError, asyncio.QueueFull) as exc:
+            error("RTC_AUDIO_FAILED", exc, trace=trace, phase=phase, queue=queue.qsize())
             await fail(ws, "Invalid audio, busy ASR, or processing limit exceeded")
-        except Exception:
+        except Exception as exc:
+            error("RTC_AUDIO_FAILED", exc, trace=trace, phase=phase, queue=queue.qsize())
             await fail(ws, "Audio processing failed", 1011)
         finally:
+            log.info("RTC_AUDIO_CLOSING trace=%s phase=%s frames=%d audio_seconds=%.2f worker_pending=%s", trace, phase, packet_count, total / BPS, worker is not None and not worker.done())
             disconnected = True
             if worker is not None:
                 while not queue.empty():
