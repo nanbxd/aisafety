@@ -1,0 +1,27 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build Android debug APK",
+			"type": "shell",
+			"command": "$env:JAVA_HOME='D:\\hackaton\\SAFETYHACK\\.tools\\java\\jdk-17.0.21+9'; $env:ANDROID_HOME='D:\\hackaton\\SAFETYHACK\\.tools\\android-sdk'; $env:GRADLE_USER_HOME='D:\\hackaton\\SAFETYHACK\\.tools\\gradle-cache'; & .\\.tools\\gradle\\gradle-8.9\\bin\\gradle.bat -p android :app:assembleDebug --no-daemon --no-watch-fs --max-workers=2 --console=plain",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "SafetyHack diagnostic server",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File server/run.ps1 -Mode diagnostic",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "SafetyHack Whisper server",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File server/run.ps1 -Mode whisper -Model .models/manual-tiny -Port 8001",
+			"isBackground": true,
+			"problemMatcher": []
+		}
+	]
+}

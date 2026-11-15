@@ -1,0 +1,26 @@
+# Creates one FREE service; no account or deployment is created by this file.
+# PUBLIC_BASE_URL must be set to the actual HTTPS origin assigned by Render.
+services:
+  - type: web
+    name: safetyhack-webrtc
+    runtime: docker
+    plan: free
+    numInstances: 1
+    dockerfilePath: ./server/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: SAFETY_TOKEN
+        generateValue: true
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: ASR_MODE
+        value: whisper
+      - key: ASR_MODEL
+        value: tiny
+      - key: ASR_DEVICE
+        value: cpu
+      - key: ASR_COMPUTE_TYPE
+        value: int8
+      - key: RTC_ICE_SERVERS_JSON
+        value: '[{"urls":"stun:stun.l.google.com:19302"}]'

@@ -1,0 +1,13 @@
+.tools
+.venv
+.models
+.git
+.env
+.env.*
+secrets
+**/*firebase-adminsdk*.json
+**/service-account*.json
+android
+tests
+**/__pycache__
+.pytest_cache

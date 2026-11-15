@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <title>Звонки с поддержкой</title>
+  <link rel="stylesheet" href="/rtc-assets/rtc.css">
+  <script src="/rtc-assets/client.js" defer></script>
+</head>
+<body>
+<main>
+  <h1 id="page-title" tabindex="-1">Звонки с поддержкой</h1>
+  <p class="notice">Держите экран открытым. Сворачивание, уход со страницы или поворот экрана в приложении завершает звонок. Входящие в фоне недоступны.</p>
+  <form id="setup">
+    <label for="role">Ваша роль</label>
+    <select id="role"><option value="receiver">Принимаю звонок</option><option value="caller">Звоню</option></select>
+    <label for="room">Комната — одинаковая у обоих участников</label>
+    <div class="room-row"><input id="room" required minlength="8" maxlength="64" pattern="[A-Za-z0-9_\-]{8,64}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="room-help"><button id="random-room" type="button">Новая</button></div>
+    <p id="room-help" class="hint">8–64 латинских букв, цифр, знаков _ или -. Передайте номер комнаты собеседнику отдельно.</p>
+    <label for="token">Ключ доступа SAFETY_TOKEN</label>
+    <input id="token" type="password" required autocomplete="off" spellcheck="false" aria-describedby="token-help">
+    <p id="token-help" class="hint">Ключ хранится только в памяти этой страницы и отправляется доверенному серверу. Он не включается в ссылки.</p>
+    <label class="consent"><input id="consent" type="checkbox" required><span>Я согласен на передачу голоса серверу для распознавания и анализа. Собеседник предупреждён и согласен.</span></label>
+    <button id="connect" type="submit">Подключиться</button>
+  </form>
+  <p id="joined-summary" hidden></p>
+  <section aria-labelledby="call-title">
+    <h2 id="call-title" tabindex="-1">Звонок</h2>
+    <p id="call-state" role="status" aria-live="polite">Не подключено</p>
+    <div class="actions">
+      <button id="invite" disabled>Позвонить</button>
+      <button id="accept" hidden>Принять</button>
+      <button id="reject" class="secondary" hidden>Отклонить</button>
+      <button id="hangup" class="danger" disabled>Завершить</button>
+      <button id="mute" class="secondary" disabled aria-pressed="false">Выключить микрофон</button>
+      <button id="playback" hidden>Включить звук собеседника</button>
+      <button id="disconnect" class="secondary" disabled>Отключиться</button>
+    </div>
+    <audio id="remote" autoplay playsinline></audio>
+  </section>
+  <section id="analysis" aria-labelledby="analysis-title">
+    <h2 id="analysis-title">Анализ разговора</h2>
+    <p id="analysis-state" role="status" aria-live="polite">Начнётся у принимающего после ответа.</p>
+    <p id="incomplete" class="warning" role="alert" hidden>Анализ неполный. Часть разговора не проверена. Не полагайтесь на отсутствие предупреждений.</p>
+    <p id="risk" aria-live="polite">Оценки пока нет.</p>
+    <ul id="reasons"></ul>
+    <h3>Распознанная речь собеседника</h3>
+    <div id="transcript" class="transcript" tabindex="0" aria-label="Распознанная речь">Текст появится после начала разговора.</div>
+    <p class="hint">Анализ может ошибаться или пропускать угрозы. Низкий риск не гарантирует безопасность. Не сообщайте коды и пароли; проверяйте просьбы через официальный канал.</p>
+  </section>
+</main>
+</body>
+</html>

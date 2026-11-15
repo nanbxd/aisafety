@@ -1,0 +1,32 @@
+:root { color-scheme: light; font-family: system-ui, sans-serif; font-size: 18px; color: #172b29; background: #f5f6f2; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { max-width: 720px; margin: auto; padding: max(20px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); }
+h1 { font-size: 28px; line-height: 1.2; margin: 0 0 20px; }
+h2 { font-size: 22px; margin: 0 0 10px; }
+h3 { font-size: 18px; margin: 24px 0 10px; }
+p { line-height: 1.5; margin: 8px 0 16px; overflow-wrap: anywhere; }
+.notice { margin-bottom: 24px; }
+label { display: block; margin: 12px 0 8px; line-height: 1.5; }
+input, select, button { font: inherit; min-height: 48px; border-radius: 6px; }
+input:not([type=checkbox]), select { width: 100%; padding: 10px 12px; border: 1px solid #657774; background: #fff; color: #172b29; caret-color: #172b29; }
+button { padding: 11px 18px; border: 1px solid #172b29; background: #172b29; color: #fff; cursor: pointer; line-height: 1.35; }
+button:hover:enabled { background: #2e4c47; }
+button.secondary { color: #172b29; background: transparent; }
+button.secondary:hover:enabled { background: #e3e9e2; }
+button.danger { background: #843528; border-color: #843528; }
+button:disabled { opacity: .48; cursor: default; }
+:focus-visible { outline: 3px solid #286756; outline-offset: 3px; }
+::selection { background: #c8dfd3; color: #172b29; }
+.room-row { display: flex; gap: 10px; }
+.room-row input { min-width: 0; flex: 1; }
+.hint { color: #455e57; font-size: 18px; }
+.consent { display: flex; align-items: flex-start; gap: 12px; margin: 20px 0; min-height: 48px; cursor: pointer; }
+.consent input { width: 24px; height: 24px; min-height: 24px; flex-shrink: 0; margin-top: 3px; accent-color: #172b29; }
+section { border-top: 1px solid #c3cec4; margin-top: 28px; padding-top: 24px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.warning { background: #f9e6c3; color: #603814; padding: 16px; border: 1px solid #ab7b40; border-radius: 6px; }
+.transcript { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow-y: auto; line-height: 1.6; padding: 12px 0; scrollbar-color: #657774 #f5f6f2; }
+ul { padding-left: 24px; line-height: 1.5; }
+[hidden] { display: none !important; }
+@media (max-width: 420px) { .actions button { flex: 1 1 100%; } main { padding-left: 20px; padding-right: 20px; } }
