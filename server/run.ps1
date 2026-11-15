@@ -1,7 +1,6 @@
 param(
-    [ValidateSet('diagnostic', 'whisper')][string]$Mode = 'diagnostic',
-    [string]$Model = 'small',
-    [string]$Device = 'cpu',
+    [ValidateSet('diagnostic', 'gemini')][string]$Mode = 'gemini',
+    [string]$Model = 'gemini-3.8-live',
     [string]$Bind = '127.0.0.1',
     [int]$Port = 8000
 )
@@ -12,12 +11,18 @@ if (-not $env:SAFETY_TOKEN) {
     $configuredToken = & ./.venv/Scripts/python.exe -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('SAFETY_TOKEN') or '')"
     $env:SAFETY_TOKEN = if ($configuredToken) { $configuredToken.Trim() } else { [guid]::NewGuid().ToString('N') }
 }
-$env:ASR_MODE = $Mode
-$env:ASR_MODEL = $Model
-$env:ASR_DEVICE = $Device
-$env:ASR_COMPUTE_TYPE = if ($Device -eq 'cuda') { 'float16' } else { 'int8' }
-Write-Host "Mode: $Mode | local server http://127.0.0.1:$Port"
-Write-Host "ASR logs: MODEL_LOADING -> MODEL_READY; RTC_PCM_FIRST -> INFERENCE_START -> INFERENCE_DONE. Diagnostic mode does not load Whisper."
+if ($PSBoundParameters.ContainsKey('Mode')) { $env:ANALYSIS_MODE = $Mode }
+elseif (-not $env:ANALYSIS_MODE) {
+    $configuredMode = & ./.venv/Scripts/python.exe -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('ANALYSIS_MODE') or 'gemini')"
+    $env:ANALYSIS_MODE = $configuredMode.Trim()
+}
+if ($PSBoundParameters.ContainsKey('Model')) { $env:GEMINI_MODEL = $Model }
+elseif (-not $env:GEMINI_MODEL) {
+    $configuredModel = & ./.venv/Scripts/python.exe -c "from dotenv import dotenv_values; print(dotenv_values('.env').get('GEMINI_MODEL') or 'gemini-3.8-live')"
+    $env:GEMINI_MODEL = $configuredModel.Trim()
+}
+Write-Host "Mode: $env:ANALYSIS_MODE | local server http://127.0.0.1:$Port"
+Write-Host "Gemini requires a server-only GEMINI_API_KEY. Diagnostic mode disables analysis."
 Write-Host "Enter this session token in the Android app: $env:SAFETY_TOKEN"
 Write-Host "WebRTC caller: /rtc?role=caller | receiver: /rtc?role=receiver"
 Write-Host "Use the same room and session token on both sides. Keep the Android receiver open."

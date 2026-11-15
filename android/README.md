@@ -15,7 +15,9 @@ query, credentials or fragment. The wrapper opens `/rtc?role=receiver` on that o
 6. Keep the Android application open. Backgrounding, Back and rotation close the page and call.
    Return to setup and explicitly reopen to reconnect. There is no push or always-on incoming mode.
 
-The Android app uses WebRTC and has no external calling-service SDK or registration. Hosting, ASR and any TURN relay still
+Audio analysis is forwarded by the backend to Google Gemini Live. Both participants must consent to cloud processing. Keep GEMINI_API_KEY only on the backend, never in the APK or browser. Model access and free quotas are not guaranteed; see the [deployment and privacy guide](../README.md).
+
+The Android app uses WebRTC and has no external calling-service SDK or registration. Hosting, Gemini analysis and any TURN relay still
 depend on your deployment; free peer-to-peer connectivity cannot be guaranteed across every NAT.
 
 ## Page integration contract

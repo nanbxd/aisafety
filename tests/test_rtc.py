@@ -19,7 +19,7 @@ ROOM = "random-room-123"
 def environment(monkeypatch):
     monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
     monkeypatch.delenv("RTC_ICE_SERVERS_JSON", raising=False)
-    monkeypatch.setenv("ASR_MODE", "diagnostic")
+    monkeypatch.setenv("ANALYSIS_MODE", "diagnostic")
 
 
 def join(ws, selected_role, **extra):
@@ -49,7 +49,7 @@ def accept(caller, receiver):
 
 def start(ws, cid, ticket, **extra):
     ws.send_json({"type": "start", "room": ROOM, "call_id": cid, "audio_ticket": ticket,
-                  "sample_rate": 16000, "channels": 1, "format": "pcm_s16le", "consent": True, **extra})
+                  "sample_rate": 16000, "channels": 1, "format": "pcm_s16le", "consent": True, "analysis_provider": "google", **extra})
     return ws.receive_json()
 
 
@@ -183,53 +183,6 @@ def test_audio_frame_bounds(raw):
             assert ws.receive_json()["type"] == "error"
 
 
-@pytest.mark.parametrize("silent", [False, True])
-def test_final_half_second_and_risk(silent):
-    seen = []
-    def transcribe(pcm, language):
-        seen.append(len(pcm))
-        return "hello"
-    with TestClient(create_app(token=TOKEN, transcriber=transcribe)) as client, pair(client) as (caller, receiver):
-        cid, ticket = accept(caller, receiver)
-        with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-            assert start(ws, cid, ticket)["mode"] == "whisper"
-            for _ in range(2):
-                ws.send_bytes((b"\x00\x00" if silent else b"\x00\x30") * 4000)
-            ws.send_json({"type": "stop"})
-            if not silent:
-                assert ws.receive_json()["type"] == "transcript"
-                assert ws.receive_json()["type"] == "risk"
-            assert ws.receive_json()["type"] == "done"
-        assert seen == ([] if silent else [16000])
-
-
-def test_disconnect_holds_slot_until_thread_finishes():
-    entered, release = threading.Event(), threading.Event()
-    def transcribe(pcm, language):
-        entered.set()
-        release.wait(5)
-        return "hello"
-    app = create_app(token=TOKEN, transcriber=transcribe)
-    with TestClient(app) as client, pair(client) as (caller, receiver):
-        cid, ticket = accept(caller, receiver)
-        try:
-            with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-                start(ws, cid, ticket)
-                for _ in range(16):
-                    ws.send_bytes(b"\x00\x30" * 4000)
-                assert entered.wait(2)
-                ws.close()
-                assert app.state.busy is True
-            assert app.state.busy is True
-        finally:
-            release.set()
-        for _ in range(100):
-            if not app.state.busy:
-                break
-            time.sleep(0.01)
-        assert app.state.busy is False
-
-
 def test_hangup_closes_audio():
     with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
@@ -279,7 +232,7 @@ def test_legacy_busy_slot_prevents_rtc_audio():
                 assert error["type"] == "error"
                 assert "code" not in error
             with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-                assert start(ws, cid, ticket) == {"type": "error", "code": "busy", "message": "ASR is busy"}
+                assert start(ws, cid, ticket) == {"type": "error", "code": "busy", "message": "Analysis is busy"}
                 with pytest.raises(WebSocketDisconnect):
                     ws.receive_json()
             assert app.state.rtc.ticket == ticket
@@ -292,23 +245,6 @@ def test_legacy_busy_slot_prevents_rtc_audio():
             assert ws.receive_json()["type"] == "done"
 
 
-def test_asr_error_is_sanitized_and_releases_slot():
-    def broken(pcm, language):
-        raise RuntimeError("secret path and credentials")
-    app = create_app(token=TOKEN, transcriber=broken)
-    with TestClient(app) as client, pair(client) as (caller, receiver):
-        cid, ticket = accept(caller, receiver)
-        with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-            start(ws, cid, ticket)
-            for _ in range(2):
-                ws.send_bytes(b"\x00\x30" * 4000)
-            ws.send_json({"type": "stop"})
-            event = ws.receive_json()
-            assert event["type"] == "error"
-            assert "secret" not in event["message"]
-        assert not app.state.busy
-
-
 def test_signaling_rate_limit():
     with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
         cid, _ = accept(caller, receiver)
@@ -318,31 +254,6 @@ def test_signaling_rate_limit():
         caller.send_json({"type": "ice", "call_id": cid, "candidate": None})
         assert caller.receive_json()["type"] == "error"
         assert receiver.receive_json()["type"] == "peer-left"
-
-
-def test_window_overlap_and_final_remainder():
-    seen = []
-    def transcribe(pcm, language):
-        seen.append(len(pcm))
-        return "hello"
-    with TestClient(create_app(token=TOKEN, transcriber=transcribe)) as client, pair(client) as (caller, receiver):
-        cid, ticket = accept(caller, receiver)
-        with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-            start(ws, cid, ticket)
-            for _ in range(16):
-                ws.send_bytes(b"\x00\x30" * 4000)
-            assert ws.receive_json()["offset_seconds"] == 0
-            assert ws.receive_json()["type"] == "risk"
-            time.sleep(0.4)  # Respect the bounded initial burst allowance.
-            for _ in range(2):
-                ws.send_bytes(b"\x00\x30" * 4000)
-            ws.send_json({"type": "stop"})
-            event = ws.receive_json()
-            assert event["offset_seconds"] == 3
-            assert event["window_seconds"] == 1.5
-            assert ws.receive_json()["type"] == "risk"
-            assert ws.receive_json()["type"] == "done"
-    assert seen == [128000, 48000]
 
 
 @pytest.mark.parametrize("first_role", ["receiver", "caller"])

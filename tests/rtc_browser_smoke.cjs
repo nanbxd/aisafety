@@ -1,7 +1,7 @@
 /* Optional real Chromium smoke. Start Python fixture with --serve-only first.
  * Usage: node tests/rtc_browser_smoke.cjs <playwright-module> <fixture-url>
  * Synthetic 440Hz caller / 880Hz receiver; fixture asserts caller-only PCM.
- * This is NOT a Whisper accuracy, handset, or NAT/TURN test. */
+ * This is NOT a live Gemini accuracy, handset, or NAT/TURN test. */
 const { chromium } = require(process.argv[2] || 'playwright');
 const base = process.argv[3];
 if (!base || !/^http:\/\/localhost:\d+$/.test(base)) throw new Error('Expected localhost fixture URL');
@@ -43,7 +43,7 @@ fs.mkdirSync(shots, {recursive:true});
     if(process.argv[4]==='--busy-redial') {
       await caller.locator('#invite').click();await receiver.locator('#accept').click();
       await receiver.waitForFunction(()=>document.querySelector('#call-state').textContent==='Разговор идёт');
-      // The fixture's first inference starts after 4s PCM and holds its slot for 8s.
+      // The fixture delays first transport cleanup to exercise busy admission.
       await new Promise(resolve=>setTimeout(resolve,6000));
       await receiver.locator('#hangup').click();
     }

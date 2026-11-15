@@ -1,9 +1,10 @@
-"""Opt-in real Chromium/WebRTC smoke with synthetic microphones and a fake ASR.
+"""Opt-in real Chromium/WebRTC smoke with synthetic microphones and fake analysis.
 
-Not a handset, NAT/TURN, human speech, or actual Whisper accuracy test.
+Not a handset, NAT/TURN, human speech, or live Gemini accuracy test.
 Requires optional playwright package and a locally installed Chromium browser.
 """
 import argparse
+import asyncio
 import os
 from pathlib import Path
 import socket
@@ -52,20 +53,16 @@ navigator.mediaDevices.getUserMedia = async () => {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--browser", default="C:/Program Files/Google/Chrome/Application/chrome.exe")
-    parser.add_argument("--serve-only", action="store_true", help="Run isolated synthetic ASR fixture for an external browser runner")
-    parser.add_argument("--slow-first-asr", action="store_true", help="Delay first fake inference to exercise busy redial")
+    parser.add_argument("--serve-only", action="store_true", help="Run isolated synthetic analysis fixture for an external browser runner")
+    parser.add_argument("--slow-first-asr", action="store_true", help="Delay first synthetic transport cleanup to exercise busy redial (legacy flag name)")
     args = parser.parse_args()
 
     os.environ.pop("PUBLIC_BASE_URL", None)
     os.environ["RTC_ICE_SERVERS_JSON"] = "[]"  # Local peers; no external STUN requests.
-    os.environ["ASR_MODE"] = "diagnostic"
+    os.environ["ANALYSIS_MODE"] = "diagnostic"
     evidence = {"frequencies": [], "fail_asr": False, "first": True}
 
-    def transcribe(pcm, language):
-        if evidence["first"]:
-            evidence["first"] = False
-            if args.slow_first_asr:
-                time.sleep(8)
+    def check_pcm(pcm):
         if evidence["fail_asr"]:
             raise RuntimeError("synthetic ASR failure")
         samples = np.frombuffer(pcm, dtype="<i2").astype(float)
@@ -76,10 +73,36 @@ def main():
         assert 420 < hz < 460, f"Expected caller 440Hz, got {hz}; receiver is 880Hz"
         return "Переведите деньги на безопасный счёт."
 
+    class SyntheticAnalysis:
+        async def run(self, queue, emit, ready, language):
+            ready.set_result(None)
+            buffer = bytearray()
+            try:
+                while True:
+                    pcm = await queue.get()
+                    if pcm is None:
+                        return
+                    buffer.extend(pcm)
+                    if len(buffer) < 32000:
+                        continue
+                    text = check_pcm(bytes(buffer))
+                    buffer.clear()
+                    await emit({"type": "transcript", "text": text})
+                    await emit({"type": "risk", "level": "high",
+                                "reasons": ["Synthetic safe-account request"],
+                                "message": "Синтетическое предупреждение для проверки интерфейса."})
+            finally:
+                # Delayed synthetic transport cleanup exercises bounded busy retry.
+                # Production Gemini cancellation does not run local inference.
+                if evidence["first"]:
+                    evidence["first"] = False
+                    if args.slow_first_asr:
+                        await asyncio.sleep(3)
+
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    app = create_app(transcriber=transcribe, token=TOKEN)
+    app = create_app(analysis_backend=SyntheticAnalysis(), token=TOKEN)
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", access_log=False, ws_max_size=70000))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

@@ -11,14 +11,12 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 
-from server.risk import RiskEngine
+from server.asr import AudioAnalysis, AnalysisError, GeminiLive
 from server.rtc import install_rtc
 from server.diagnostics import log, error
 
 SAMPLE_RATE = 16000
 BYTES_PER_SECOND = SAMPLE_RATE * 2
-WINDOW_BYTES = BYTES_PER_SECOND * 4
-OVERLAP_BYTES = BYTES_PER_SECOND
 MAX_FRAME_BYTES = 16000
 
 
@@ -28,7 +26,7 @@ def level(pcm: bytes) -> float:
     return round(20 * math.log10(max(rms, 0.000001)), 1)
 
 
-def create_app(transcriber=None, token: str | None = None, *, load_environment: bool = False) -> FastAPI:
+def create_app(analysis_backend=None, token: str | None = None, *, load_environment: bool = False) -> FastAPI:
     """Build an app; the deployment entry point opts into local dotenv loading."""
     @asynccontextmanager
     async def lifespan(app):
@@ -37,23 +35,15 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
         app.state.token = token if token is not None else os.getenv("SAFETY_TOKEN", "")
         if len(app.state.token) < 16:
             raise RuntimeError("Set SAFETY_TOKEN to a random secret of at least 16 characters.")
-        app.state.transcribe = transcriber
-        mode = os.getenv("ASR_MODE", "diagnostic")
-        log.info("ASR_STARTUP requested_mode=%s injected_transcriber=%s", mode if mode in {"diagnostic", "whisper"} else "invalid", transcriber is not None)
-        if mode not in {"diagnostic", "whisper"}:
-            raise RuntimeError("ASR_MODE must be diagnostic or whisper")
-        if transcriber is None and mode == "whisper":
-            from server.asr import WhisperTranscriber
-            began = time.monotonic()
-            log.info("ASR_MODEL_LOADING")
-            try:
-                app.state.transcribe = await asyncio.to_thread(WhisperTranscriber)
-            except Exception as exc:
-                error("ASR_MODEL_LOAD_FAILED", exc)
-                raise
-            log.info("ASR_MODEL_READY load_ms=%d", (time.monotonic() - began) * 1000)
+        mode = os.getenv("ANALYSIS_MODE", "diagnostic")
+        if mode not in {"diagnostic", "gemini"}:
+            raise RuntimeError("ANALYSIS_MODE must be diagnostic or gemini")
+        app.state.analysis = analysis_backend
+        if analysis_backend is None and mode == "gemini":
+            app.state.analysis = GeminiLive()
+        app.state.mode = "gemini" if app.state.analysis else "diagnostic"
         app.state.busy = False
-        log.info("ASR_SERVICE_READY enabled=%s", app.state.transcribe is not None)
+        log.info("ANALYSIS_SERVICE_READY mode=%s", app.state.mode)
         yield
 
     app = FastAPI(title="SafetyHack Voice", lifespan=lifespan)
@@ -61,7 +51,7 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "mode": "whisper" if app.state.transcribe else "diagnostic", "busy": app.state.busy}
+        return {"status": "ok", "mode": app.state.mode, "busy": app.state.busy}
 
     @app.websocket("/ws/audio")
     async def audio(ws: WebSocket):
@@ -75,7 +65,7 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
             await ws.close(code=1013)
             return
         app.state.busy = True
-        worker = None
+        analysis = None
         try:
             start = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
             if not isinstance(start, dict) or any(start.get(k) != v for k, v in {
@@ -83,42 +73,30 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
             }.items()) or start.get("language", "ru") not in {"ru", "kk", "en"}:
                 raise ValueError("Нужен start: PCM s16le, 16000 Hz, mono, язык ru/kk/en.")
             language = start.get("language", "ru")
-            await ws.send_json({"type": "ready", "mode": "whisper" if app.state.transcribe else "diagnostic"})
-            queue = asyncio.Queue(maxsize=3)
+            if app.state.analysis and (start.get("consent") is not True or start.get("analysis_provider") != "google"):
+                raise AnalysisError("consent_required", "Explicit consent to send audio to Google is required: consent=true, analysis_provider=google.")
             send_lock = asyncio.Lock()
-            risk = RiskEngine()
 
             async def emit(event):
                 async with send_lock:
                     await ws.send_json(event)
 
-            async def process():
-                while True:
-                    item = await queue.get()
-                    if item is None:
-                        return
-                    pcm, offset = item
-                    if app.state.transcribe is None or level(pcm) < -55:
-                        continue
-                    began = time.monotonic()
-                    text = await asyncio.to_thread(app.state.transcribe, pcm, language)
-                    if text:
-                        await emit({"type": "transcript", "text": text, "offset_seconds": offset,
-                                    "window_seconds": len(pcm) / BYTES_PER_SECOND,
-                                    "processing_ms": round((time.monotonic() - began) * 1000)})
-                        await emit(risk.assess(text))
-
-            worker = asyncio.create_task(process())
-            buffer = bytearray()
+            analysis = AudioAnalysis(app.state.analysis, emit, language)
+            await analysis.start()
+            await emit({"type": "ready", "mode": app.state.mode})
             total = 0
-            offset = 0
             last_meter = 0
             received_at = time.monotonic()
-            new_bytes = 0
+            last_received = received_at
             while True:
-                if worker.done():
-                    await worker
-                frame = await asyncio.wait_for(ws.receive(), timeout=20)
+                analysis.check()
+                try:
+                    frame = await asyncio.wait_for(ws.receive(), timeout=1)
+                except TimeoutError:
+                    if time.monotonic() - last_received >= 20:
+                        raise
+                    continue
+                last_received = time.monotonic()
                 if frame["type"] == "websocket.disconnect":
                     break
                 raw = frame.get("bytes")
@@ -126,10 +104,7 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
                     event = json.loads(frame.get("text") or "{}")
                     if not isinstance(event, dict) or event.get("type") != "stop":
                         raise ValueError("Ожидается бинарное аудио или stop.")
-                    if new_bytes and len(buffer) >= BYTES_PER_SECOND // 2:
-                        queue.put_nowait((bytes(buffer), offset))
-                    await asyncio.wait_for(queue.put(None), timeout=30)
-                    await asyncio.wait_for(asyncio.shield(worker), timeout=120)
+                    await analysis.finish()
                     await emit({"type": "done", "audio_seconds": round(total / BYTES_PER_SECOND, 2)})
                     await ws.close(code=1000)
                     break
@@ -146,41 +121,21 @@ def create_app(transcriber=None, token: str | None = None, *, load_environment: 
                     await emit({"type": "level", "dbfs": db, "silent": db < -55,
                                 "audio_seconds": round(total / BYTES_PER_SECOND, 2)})
                     last_meter = time.monotonic()
-                buffer.extend(raw)
-                new_bytes += len(raw)
-                while len(buffer) >= WINDOW_BYTES:
-                    queue.put_nowait((bytes(buffer[:WINDOW_BYTES]), offset))
-                    del buffer[:WINDOW_BYTES - OVERLAP_BYTES]
-                    offset += 3
-                    new_bytes = len(buffer) - OVERLAP_BYTES
+                analysis.feed(raw)
         except WebSocketDisconnect:
             pass
         except Exception as exc:
-            if isinstance(exc, asyncio.QueueFull):
-                message = "Распознавание не успевает. Выберите меньшую модель или GPU; сессия остановлена."
-            elif isinstance(exc, (ValueError, TimeoutError)):
-                message = str(exc) or "Истекло время ожидания аудио или распознавания."
-            else:
-                message = "Ошибка обработки аудио на сервере. Проверьте настройки модели."
+            error("AUDIO_FAILED", exc)
+            message = str(exc) if isinstance(exc, AnalysisError) else "Invalid audio or processing failure."
             with contextlib.suppress(Exception):
-                await ws.send_json({"type": "error", "message": message})
+                await ws.send_json({"type": "error", "code": exc.code if isinstance(exc, AnalysisError) else "invalid_audio", "message": message})
                 await ws.close(code=1011)
         finally:
-            # Wait for a running inference before admitting the next session:
-            # cancelling to_thread does not stop the underlying model invocation.
-            if worker is not None and not worker.done():
-                with contextlib.suppress(asyncio.QueueFull):
-                    queue.put_nowait(None)
-                # Pending queue entries must not prolong a disconnected session.
-                while not queue.empty():
-                    queue.get_nowait()
-                queue.put_nowait(None)
-                with contextlib.suppress(Exception):
-                    await worker
-            elif worker is not None:
-                with contextlib.suppress(Exception):
-                    worker.result()
-            app.state.busy = False
+            try:
+                if analysis:
+                    await analysis.close()
+            finally:
+                app.state.busy = False
 
     return app
 

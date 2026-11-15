@@ -21,7 +21,8 @@
     <label for="token">Ключ доступа SAFETY_TOKEN</label>
     <input id="token" type="password" required autocomplete="off" spellcheck="false" aria-describedby="token-help">
     <p id="token-help" class="hint">Ключ хранится только в памяти этой страницы и отправляется доверенному серверу. Он не включается в ссылки.</p>
-    <label class="consent"><input id="consent" type="checkbox" required><span>Я согласен на передачу голоса серверу для распознавания и анализа. Собеседник предупреждён и согласен.</span></label>
+    <label class="consent"><input id="consent" type="checkbox" required aria-describedby="privacy-help"><span>Я согласен на передачу голоса звонящего через сервер во внешний сервис Google Gemini Live для распознавания и анализа. Собеседник предупреждён и согласен.</span></label>
+    <p id="privacy-help" class="hint">Демо — только с синтетической речью без личных и конфиденциальных данных. В бесплатном тарифе Google может использовать переданные данные для улучшения продуктов. Ответы Gemini голосом не воспроизводятся.</p>
     <button id="connect" type="submit">Подключиться</button>
   </form>
   <p id="joined-summary" hidden></p>

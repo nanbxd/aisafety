@@ -223,10 +223,12 @@ test('receiver uses only remote track; gates PCM on ready; backpressure warning 
   const audio = h.sockets[1];
   audio.open();
   assert.equal(audio.sent[0].sample_rate, 16000);
+  assert.equal(audio.sent[0].consent, true);
+  assert.equal(audio.sent[0].analysis_provider, 'google');
   const node = h.nodes[0];
   node.port.onmessage({ data: new ArrayBuffer(6400) });
   assert.equal(audio.sent.length, 1);
-  audio.event({ type: 'ready', mode: 'whisper' });
+  audio.event({ type: 'ready', mode: 'gemini' });
   node.port.onmessage({ data: new ArrayBuffer(6400) });
   assert.equal(audio.sent.length, 2);
   audio.bufferedAmount = 30000;
@@ -292,6 +294,57 @@ async function receivingCall() {
   return h;
 }
 
+test('unknown, missing and legacy ready modes stop analysis without ending the call', async () => {
+  for (const mode of [undefined, 'unknown', 'whisper']) {
+    const h = await receivingCall();
+    const audio = h.sockets[1];
+    audio.open();
+    audio.event({ type: 'ready', mode });
+    assert.equal(h.elements.incomplete.hidden, false);
+    assert.match(h.elements['analysis-state'].textContent, /Режим анализа не поддерживается/);
+    assert.equal(audio.readyState, 3);
+    assert.equal(h.peers[0].closed, undefined);
+    h.sandbox.safetyRtcStop();
+  }
+});
+
+test('analysis requires Gemini readiness and never replaces peer audio with generated output', async () => {
+  const h = await receivingCall();
+  const audio = h.sockets[1];
+  audio.open();
+  const initialText = h.elements.transcript.textContent;
+  const initialRisk = h.elements.risk.textContent;
+  audio.event({ type: 'transcript', text: 'premature' });
+  audio.event({ type: 'risk', level: 'low' });
+  assert.equal(h.elements.transcript.textContent, initialText);
+  assert.equal(h.elements.risk.textContent, initialRisk);
+  audio.event({ type: 'ready', mode: 'gemini' });
+  audio.event({ type: 'transcript', text: '<b>synthetic demo</b>' });
+  audio.event({ type: 'risk', level: 'high', reasons: ['Synthetic warning'] });
+  assert.equal(h.elements.transcript.textContent, '<b>synthetic demo</b>');
+  assert.match(h.elements['analysis-state'].textContent, /Google Gemini Live/);
+  assert.doesNotMatch(h.elements['analysis-state'].textContent, /перекрываться/);
+  assert.match(h.elements.risk.textContent, /тревожные признаки/);
+  assert.equal(h.elements.reasons.children[0].textContent, 'Synthetic warning');
+  audio.event({ type: 'risk', level: 'low' });
+  assert.equal(h.elements.risk.textContent, 'Модель не отметила явных признаков — это не гарантия безопасности.');
+  const remote = h.elements.remote.srcObject;
+  audio.event({ type: 'audio', data: 'generated-output' });
+  audio.event({ serverContent: { modelTurn: { parts: [{ inlineData: { mimeType: 'audio/pcm', data: 'generated-output' } }] } } });
+  assert.equal(h.elements.remote.srcObject, remote);
+  assert.equal(h.peers[0].closed, undefined);
+  h.sandbox.safetyRtcStop();
+});
+
+test('consent identifies external Google processing and free-tier demo privacy limits', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../server/static/rtc/index.html'), 'utf8');
+  assert.match(html, /id="consent"[^>]*required[^>]*aria-describedby="privacy-help"/);
+  assert.match(html, /во внешний сервис Google Gemini Live/);
+  assert.match(html, /только с синтетической речью/);
+  assert.match(html, /бесплатном тарифе Google может использовать переданные данные/);
+  assert.match(html, /Ответы Gemini голосом не воспроизводятся/);
+});
+
 function fireTimer(h, ms) {
   const entry = [...h.timers].find(([, timer]) => timer.ms === ms);
   assert.ok(entry, `Expected ${ms}ms timer`);
@@ -299,12 +352,43 @@ function fireTimer(h, ms) {
   entry[1].fn();
 }
 
+test('Gemini error codes explain failure without retrying or ending the call', async () => {
+  const cases = {
+    quota_exceeded: /Лимит Google Gemini исчерпан/,
+    model_unavailable: /Модель Gemini Live недоступна/,
+    authentication_failed: /Google отклонил доступ/,
+    session_expired: /Сеанс Gemini Live истёк/,
+    upstream_closed: /Связь с Google Gemini потеряна/,
+    processing_timeout: /не завершил обработку вовремя/,
+    upstream_error: /Ошибка Google Gemini/,
+    unknown: /Распознавание остановлено сервером/,
+    toString: /Распознавание остановлено сервером/
+  };
+  for (const [code, expected] of Object.entries(cases)) {
+    const h = await receivingCall();
+    const audio = h.sockets[1];
+    audio.open();
+    audio.event({ type: 'ready', mode: 'gemini' });
+    audio.event({ type: 'error', code, message: 'raw provider detail must not appear' });
+    assert.match(h.elements['analysis-state'].textContent, expected);
+    assert.match(h.elements['analysis-state'].textContent, /Разговор продолжается; анализ неполный/);
+    assert.doesNotMatch(h.elements['analysis-state'].textContent, /raw provider/);
+    assert.equal(h.elements.incomplete.hidden, false);
+    assert.equal(audio.readyState, 3);
+    assert.equal(h.peers[0].closed, undefined);
+    assert.equal([...h.timers.values()].some(timer => timer.ms === 750), false);
+    h.sandbox.safetyRtcStop();
+  }
+});
+
 test('explicit busy retries same unconsumed ticket then resumes ASR while retaining gap warning', async () => {
   const h = await receivingCall();
   for (let attempt = 1; attempt <= 3; attempt++) {
     const audio = h.sockets[attempt];
     audio.open();
     assert.equal(audio.sent[0].audio_ticket, 'unconsumed-ticket-placeholder');
+    assert.equal(audio.sent[0].consent, true);
+    assert.equal(audio.sent[0].analysis_provider, 'google');
     audio.event({ type: 'error', code: 'busy', message: 'Previous inference still finishing' });
     assert.equal(audio.readyState, 3);
     assert.equal(h.peers[0].closed, undefined);
@@ -314,7 +398,7 @@ test('explicit busy retries same unconsumed ticket then resumes ASR while retain
   const audio = h.sockets[4];
   audio.open();
   assert.equal(audio.sent[0].audio_ticket, 'unconsumed-ticket-placeholder');
-  audio.event({ type: 'ready', mode: 'whisper' });
+  audio.event({ type: 'ready', mode: 'gemini' });
   assert.equal(h.elements.incomplete.hidden, false);
   assert.match(h.elements['analysis-state'].textContent, /Распознавание включено/);
   assert.equal([...h.timers.values()].some(timer => [750, 12000, 15000].includes(timer.ms)), false);

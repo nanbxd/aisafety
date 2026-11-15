@@ -261,7 +261,7 @@
     c.audioTimer = setTimeout(() => analysisFailure(c, 'Сервер анализа не ответил. Разговор продолжается.'), 12000);
     socket.onopen = () => {
       if (!active(c) || c.analysisFailed || c.ending || c.audio !== socket) { closeSocket(socket); return; }
-      try { socket.send(JSON.stringify({ type: 'start', audio_ticket: c.audioTicket, room: c.session.room, call_id: c.id, sample_rate: 16000, channels: 1, format: 'pcm_s16le', consent: true })); }
+      try { socket.send(JSON.stringify({ type: 'start', audio_ticket: c.audioTicket, room: c.session.room, call_id: c.id, sample_rate: 16000, channels: 1, format: 'pcm_s16le', consent: true, analysis_provider: 'google' })); }
       catch (_) { analysisFailure(c, 'Не удалось запустить анализ. Разговор продолжается.'); }
     };
     socket.onmessage = event => {
@@ -283,16 +283,21 @@
         clearTimer(c.audioDeadlineTimer);
         clearTimer(c.audioRetryTimer);
         c.audioTicket = null;
-        if (data.mode !== 'whisper') { analysisFailure(c, 'Диагностический режим: распознавание и оценка риска отсутствуют. Разговор продолжается.'); return; }
+        if (data.mode !== 'gemini') {
+          analysisFailure(c, data.mode === 'diagnostic'
+            ? 'Диагностический режим: распознавание и оценка риска отсутствуют. Разговор продолжается.'
+            : 'Режим анализа не поддерживается: распознавание и оценка риска недоступны. Разговор продолжается.');
+          return;
+        }
         c.audioReady = true;
-        analysisState('Распознавание включено. Ожидание речи собеседника…');
-      } else if (data.type === 'transcript' && typeof data.text === 'string') {
+        analysisState('Распознавание включено через Google Gemini Live. Ожидание речи собеседника…');
+      } else if (data.type === 'transcript' && c.audioReady && typeof data.text === 'string') {
         c.text.push(data.text.slice(0, 12000));
         while (c.text.join('\n').length > 24000) c.text.shift();
         ui.transcript.textContent = c.text.join('\n');
-        analysisState('Речь собеседника распознаётся. Фрагменты могут перекрываться.');
-      } else if (data.type === 'risk') {
-        const labels = { low: 'Низкий риск по правилам — это не гарантия безопасности.', medium: 'Есть повод проверить просьбу.', high: 'Обнаружены тревожные признаки.' };
+        analysisState('Речь собеседника распознаётся через Google Gemini Live.');
+      } else if (data.type === 'risk' && c.audioReady) {
+        const labels = { low: 'Модель не отметила явных признаков — это не гарантия безопасности.', medium: 'Есть повод проверить просьбу.', high: 'Обнаружены тревожные признаки.' };
         ui.risk.textContent = labels[data.level] || 'Оценка риска недоступна.';
         if (typeof data.message === 'string') ui.risk.textContent += ` ${data.message.slice(0, 4000)}`;
         ui.reasons.replaceChildren();
@@ -302,7 +307,19 @@
           li.textContent = reason.slice(0, 2000);
           ui.reasons.append(li);
         }
-      } else if (data.type === 'error' || data.type === 'done') analysisFailure(c, 'Распознавание остановлено сервером. Разговор продолжается; анализ неполный.');
+      } else if (data.type === 'error' || data.type === 'done') {
+        const errors = {
+          quota_exceeded: 'Лимит Google Gemini исчерпан. Попросите организатора проверить квоту.',
+          model_unavailable: 'Модель Gemini Live недоступна. Попросите организатора проверить настройки модели.',
+          authentication_failed: 'Google отклонил доступ к Gemini. Попросите организатора проверить ключ и права доступа.',
+          session_expired: 'Сеанс Gemini Live истёк. Для нового анализа начните новый звонок.',
+          upstream_closed: 'Связь с Google Gemini потеряна. Для нового анализа начните новый звонок.',
+          processing_timeout: 'Google Gemini не завершил обработку вовремя. Для нового анализа начните новый звонок.',
+          upstream_error: 'Ошибка Google Gemini. Для нового анализа начните новый звонок.'
+        };
+        const detail = data.type === 'error' && Object.hasOwn(errors, data.code) ? errors[data.code] : 'Распознавание остановлено сервером.';
+        analysisFailure(c, `${detail} Разговор продолжается; анализ неполный.`);
+      }
     };
     socket.onerror = () => { if (c.audio === socket) analysisFailure(c, 'Канал анализа недоступен. Разговор продолжается.'); };
     socket.onclose = () => { if (c.audio === socket) analysisFailure(c, 'Связь с анализом потеряна. Разговор продолжается.'); };

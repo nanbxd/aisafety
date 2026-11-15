@@ -57,47 +57,6 @@ def test_invalid_start():
             assert ws.receive_json()["type"] == "error"
 
 
-def test_final_audio_is_transcribed_and_risk_follows():
-    received = []
-
-    def transcriber(pcm, language):
-        received.append((len(pcm), language))
-        return "Продиктуйте код из СМС"
-
-    with TestClient(create_app(transcriber=transcriber, token=TOKEN)) as client:
-        with client.websocket_connect("/ws/audio", headers=HEADERS) as ws:
-            ws.send_json(START)
-            assert ws.receive_json()["mode"] == "whisper"
-            audio = tone()
-            for i in range(0, len(audio), 8000):
-                ws.send_bytes(audio[i:i + 8000])
-            ws.send_json({"type": "stop"})
-            events = []
-            while True:
-                event = ws.receive_json()
-                events.append(event)
-                if event["type"] == "done":
-                    break
-            assert any(e["type"] == "transcript" for e in events)
-            assert any(e["type"] == "risk" and e["level"] == "high" for e in events)
-            assert received == [(32000, "ru")]
-
-
-def test_model_failure_is_reported_not_hidden():
-    def broken(pcm, language):
-        raise RuntimeError("secret filesystem path must not leak")
-    with TestClient(create_app(transcriber=broken, token=TOKEN)) as client:
-        with client.websocket_connect("/ws/audio", headers=HEADERS) as ws:
-            ws.send_json(START)
-            ws.receive_json()
-            ws.send_bytes(tone(0.5))
-            ws.send_json({"type": "stop"})
-            assert ws.receive_json()["type"] == "level"
-            event = ws.receive_json()
-            assert event["type"] == "error"
-            assert "secret" not in event["message"]
-
-
 def test_busy_and_disconnect_release():
     with TestClient(create_app(token=TOKEN)) as client:
         with client.websocket_connect("/ws/audio", headers=HEADERS) as first:

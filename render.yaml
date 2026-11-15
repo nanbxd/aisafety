@@ -14,13 +14,11 @@ services:
         generateValue: true
       - key: PUBLIC_BASE_URL
         sync: false
-      - key: ASR_MODE
-        value: whisper
-      - key: ASR_MODEL
-        value: tiny
-      - key: ASR_DEVICE
-        value: cpu
-      - key: ASR_COMPUTE_TYPE
-        value: int8
+      - key: ANALYSIS_MODE
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-live
       - key: RTC_ICE_SERVERS_JSON
         value: '[{"urls":"stun:stun.l.google.com:19302"}]'
