@@ -55,7 +55,7 @@ class CaptureService : Service() {
             recorder.startRecording()
             check(recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Микрофон не включился" }
             if (intent.getBooleanExtra("consent", false)) {
-                try { stream = AudioSocket(intent.getStringExtra("endpoint")!!, intent.getStringExtra("token")!!) }
+                try { stream = AudioSocket(intent.getStringExtra("endpoint")!!) }
                 catch (_: Exception) { CaptureState.update { it.copy(network = "Проверьте настройки соединения. Запись на телефоне продолжается.") } }
             }
             CaptureState.update { it.copy(status = "Идёт запись · не более 30 секунд") }

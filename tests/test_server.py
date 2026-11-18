@@ -8,9 +8,8 @@ from starlette.websockets import WebSocketDisconnect
 from server.app import create_app, level
 from server.risk import RiskEngine
 
-TOKEN = "test-token-at-least-sixteen"
 START = {"type": "start", "sample_rate": 16000, "channels": 1, "format": "pcm_s16le", "language": "ru"}
-HEADERS = {"authorization": "Bearer " + TOKEN}
+HEADERS = {}
 
 
 def tone(seconds=1):
@@ -22,15 +21,17 @@ def test_level_silence_and_signal():
     assert -15 < level(tone()) < -8
 
 
-def test_authentication():
-    with TestClient(create_app(token=TOKEN)) as client:
-        with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect("/ws/audio"):
-                pass
+def test_audio_connects_without_credentials():
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/audio") as ws:
+            ws.send_json(START)
+            assert ws.receive_json()["type"] == "ready"
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "done"
 
 
 def test_diagnostic_never_invents_transcript():
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/audio", headers=HEADERS) as ws:
             ws.send_json(START)
             assert ws.receive_json() == {"type": "ready", "mode": "diagnostic"}
@@ -42,7 +43,7 @@ def test_diagnostic_never_invents_transcript():
 
 @pytest.mark.parametrize("bad", [b"x", bytes(16002), b""])
 def test_bad_pcm(bad):
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/audio", headers=HEADERS) as ws:
             ws.send_json(START)
             ws.receive_json()
@@ -51,14 +52,14 @@ def test_bad_pcm(bad):
 
 
 def test_invalid_start():
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/audio", headers=HEADERS) as ws:
             ws.send_json({**START, "sample_rate": 48000})
             assert ws.receive_json()["type"] == "error"
 
 
 def test_busy_and_disconnect_release():
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/audio", headers=HEADERS) as first:
             first.send_json(START)
             first.receive_json()

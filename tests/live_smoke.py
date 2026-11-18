@@ -12,7 +12,7 @@ async def main():
     if len(sys.argv) > 1 and os.getenv("ALLOW_LIVE_GEMINI") != "1":
         raise SystemExit("Set ALLOW_LIVE_GEMINI=1 only after consent to send this audio to Gemini.")
     async with connect(os.getenv("SAFETY_ENDPOINT", "ws://127.0.0.1:8000/ws/audio"),
-                       additional_headers={"Authorization": "Bearer " + os.environ["SAFETY_TOKEN"]}) as ws:
+                       additional_headers={}) as ws:
         await ws.send(json.dumps({"type": "start", "sample_rate": 16000, "channels": 1,
                                   "format": "pcm_s16le", "language": "ru",
                                   "consent": len(sys.argv) > 1, "analysis_provider": "google"}))

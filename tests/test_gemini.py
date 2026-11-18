@@ -9,7 +9,7 @@ from google.genai import types
 from server.app import create_app
 from server.asr import AudioAnalysis, AnalysisError, GeminiLive, DEFAULT_MODEL, validate_report
 from tests.fake_analysis import FakeAnalysis
-from tests.test_rtc import TOKEN, ORIGIN, ROOM, pair, accept, start
+from tests.test_rtc import ORIGIN, ROOM, pair, accept, start
 
 REPORT = {"level": "high", "reasons": ["Code requested"], "message": "Do not share codes."}
 
@@ -165,7 +165,7 @@ def test_provider_failure_sanitized_immediate_no_fallback(where, caplog):
 
 def test_rtc_provider_failure_keeps_signaling_and_releases_slot():
     backend = FakeAnalysis(failure=AnalysisError("quota_exceeded", "Gemini quota exhausted."))
-    app = create_app(token=TOKEN, analysis_backend=backend)
+    app = create_app(analysis_backend=backend)
     with TestClient(app) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
@@ -183,7 +183,7 @@ def test_rtc_provider_failure_keeps_signaling_and_releases_slot():
 @pytest.mark.parametrize("provider", [None, "not-google"])
 def test_rtc_provider_consent_before_ticket_consumption(provider):
     backend = FakeAnalysis()
-    app = create_app(token=TOKEN, analysis_backend=backend)
+    app = create_app(analysis_backend=backend)
     with TestClient(app) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
@@ -199,10 +199,10 @@ def test_rtc_provider_consent_before_ticket_consumption(provider):
 @pytest.mark.parametrize("path", ["/ws/audio", "/ws/rtc-audio"])
 def test_disconnect_and_cleanup_exception_release_slot(path):
     backend = FakeAnalysis(cleanup_failure=True)
-    app = create_app(token=TOKEN, analysis_backend=backend)
+    app = create_app(analysis_backend=backend)
     with TestClient(app) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
-        headers = ORIGIN if path.endswith("rtc-audio") else {"authorization": "Bearer " + TOKEN}
+        headers = ORIGIN if path.endswith("rtc-audio") else {}
         with client.websocket_connect(path, headers=headers) as ws:
             if path.endswith("rtc-audio"):
                 assert start(ws, cid, ticket)["type"] == "ready"
@@ -216,8 +216,8 @@ def test_disconnect_and_cleanup_exception_release_slot(path):
 
 def test_legacy_requires_explicit_google_consent():
     backend = FakeAnalysis()
-    with TestClient(create_app(token=TOKEN, analysis_backend=backend)) as client:
-        with client.websocket_connect("/ws/audio", headers={"authorization": "Bearer " + TOKEN}) as ws:
+    with TestClient(create_app(analysis_backend=backend)) as client:
+        with client.websocket_connect("/ws/audio", headers={}) as ws:
             ws.send_json({"type": "start", "sample_rate": 16000, "channels": 1, "format": "pcm_s16le"})
             assert ws.receive_json()["code"] == "consent_required"
     assert not backend.frames and not backend.closed
@@ -242,11 +242,11 @@ def test_missing_secret_and_invalid_mode_fail_closed(monkeypatch):
     monkeypatch.setenv("ANALYSIS_MODE", "gemini")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
-        with TestClient(create_app(token=TOKEN)):
+        with TestClient(create_app()):
             pass
     monkeypatch.setenv("ANALYSIS_MODE", "whisper")
     with pytest.raises(RuntimeError, match="ANALYSIS_MODE"):
-        with TestClient(create_app(token=TOKEN)):
+        with TestClient(create_app()):
             pass
 
 

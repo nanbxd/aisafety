@@ -19,7 +19,7 @@ from server.asr import AudioAnalysis, AnalysisError
 from server.diagnostics import log, error
 
 RING_SECONDS = 60
-AUTH_SECONDS = 10
+JOIN_SECONDS = 10
 ENDED_CALL_LIMIT = 16
 ENDED_CALL_TTL = 120
 MAX_JSON = 70000
@@ -93,7 +93,7 @@ def allowed_origin(ws):
         return False
 
 
-async def read_json(ws, timeout=AUTH_SECONDS):
+async def read_json(ws, timeout=JOIN_SECONDS):
     frame = await asyncio.wait_for(ws.receive(), timeout)
     if frame["type"] == "websocket.disconnect":
         raise WebSocketDisconnect()
@@ -198,9 +198,6 @@ def install_rtc(app):
         joined = False
         try:
             start = await read_json(ws)
-            supplied = start.get("token")
-            if not isinstance(supplied, str) or not hmac.compare_digest(supplied.encode(), app.state.token.encode()):
-                raise ValueError("Authentication failed")
             role, room = start.get("role"), start.get("room")
             if start.get("type") != "join" or start.get("consent") is not True or role not in {"caller", "receiver"} or not isinstance(room, str) or not ROOM.fullmatch(room):
                 raise ValueError("Invalid join")

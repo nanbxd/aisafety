@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 import java.util.Locale
 
 /** No audio is retained while awaiting ready; at most 32 KB is queued. */
-class AudioSocket(endpoint: String, token: String) : WebSocketListener() {
+class AudioSocket(endpoint: String) : WebSocketListener() {
     private val client = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.SECONDS).pingInterval(10, TimeUnit.SECONDS).build()
     private var socket: WebSocket? = null
@@ -22,7 +22,7 @@ class AudioSocket(endpoint: String, token: String) : WebSocketListener() {
     init {
         CaptureState.update { it.copy(network = "Подключение… Ожидаем готовности сервера") }
         socket = client.newWebSocket(Request.Builder().url(endpoint)
-            .header("Authorization", "Bearer $token").build(), this)
+            .build(), this)
     }
 
     @Synchronized override fun onOpen(webSocket: WebSocket, response: Response) {
@@ -104,7 +104,7 @@ class AudioSocket(endpoint: String, token: String) : WebSocketListener() {
     }
 
     override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-        fail("Ошибка соединения${response?.let { " (код ${it.code})" } ?: ""}. Проверьте адрес сервера, ключ доступа и сеть")
+        fail("Ошибка соединения${response?.let { " (код ${it.code})" } ?: ""}. Проверьте адрес сервера и сеть")
     }
     @Synchronized override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
         if (!stopping || done.count > 0) fail("Сервер закрыл соединение до завершения обработки (код $code)")

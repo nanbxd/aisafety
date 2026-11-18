@@ -26,7 +26,7 @@ Setup and diagnostics are single-column, fill-viewport scrollable forms with 24d
 
 ## Components
 
-- **Call setup:** “Звонки с поддержкой” precedes an explicit foreground-only notice: minimizing, rotating or pressing Back ends the call, and background incoming calls are unavailable. The HTTPS origin field has a visible “Доверенный сервер HTTPS” label linked through `labelFor`, a URL keyboard and inline validation. Only the origin is saved; room and access-key entry belongs to the server page.
+- **Call setup:** “Звонки с поддержкой” precedes an explicit foreground-only notice: minimizing, rotating or pressing Back ends the call, and background incoming calls are unavailable. The HTTPS origin field has a visible “Доверенный сервер HTTPS” label linked through `labelFor`, a URL keyboard and inline validation. Only the origin is saved; room entry belongs to the server page.
 - **Touch targets:** setup buttons have a 56dp minimum height; the origin field and receiver close button have a 48dp minimum. Diagnostic buttons are at least 56dp; source selection and consent are at least 48dp. Preserve targets of at least 48dp for added interactive controls; the existing diagnostic text fields do not explicitly set that minimum.
 - **Receiver toolbar:** a persistent foreground notice and “Закрыть звонок и вернуться” button remain outside the WebView. Closing returns to setup with textual feedback. An origin-specific native microphone consent dialog uses explicit allow/cancel actions after Android permission has already been granted from the setup Open action. The WebView never requests system permission mid-call.
 - **Diagnostics:** readiness, local sound level, source selection, Start, Stop, Replay and Delete precede optional network configuration. Source and network settings lock while recording/finalizing; unavailable actions use native disabled states. Risk includes a textual level, so meaning does not rely on color. Server output is selectable; diagnostic-mode copy explicitly states that speech recognition and risk assessment are unavailable.
@@ -36,6 +36,6 @@ Setup and diagnostics are single-column, fill-viewport scrollable forms with 24d
 
 - Do preserve Russian labels, visible instructions, native control states and the foreground-only warning.
 - Do keep diagnostic recording separate from the active receiver session.
-- Don't imply that the native wrapper supplies a detector or background calling; authentication and WebRTC interaction belong to the trusted page.
+- Don't imply that the native wrapper supplies a detector or background calling; room setup and WebRTC interaction belong to the trusted page.
 - Don't claim visual or device validation from source inspection alone.
 

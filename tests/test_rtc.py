@@ -10,7 +10,6 @@ from starlette.websockets import WebSocketDisconnect
 from server.app import create_app
 from server import rtc
 
-TOKEN = "rtc-test-token-at-least-sixteen"
 ORIGIN = {"origin": "http://localhost:8080"}
 ROOM = "random-room-123"
 
@@ -23,7 +22,7 @@ def environment(monkeypatch):
 
 
 def join(ws, selected_role, **extra):
-    ws.send_json({"type": "join", "token": TOKEN, "room": ROOM, "role": selected_role, "consent": True, **extra})
+    ws.send_json({"type": "join", "room": ROOM, "role": selected_role, "consent": True, **extra})
     return ws.receive_json()
 
 
@@ -55,7 +54,7 @@ def start(ws, cid, ticket, **extra):
 
 def test_status_does_not_expose_turn_credentials(monkeypatch):
     monkeypatch.setenv("RTC_ICE_SERVERS_JSON", json.dumps([{"urls": "turn:example.test", "username": "secret-user", "credential": "secret-pass"}]))
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         assert client.get("/api/rtc/status").json() == {"asr_configured": False, "turn_configured": True}
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as ws:
             assert join(ws, "receiver")["ice_servers"][0]["credential"] == "secret-pass"
@@ -63,7 +62,7 @@ def test_status_does_not_expose_turn_credentials(monkeypatch):
 
 @pytest.mark.parametrize("headers", [{}, {"origin": "https://evil.test"}, {"origin": "null"}, {"origin": "http://localhost.evil.test"}])
 def test_origin_denied(headers):
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/rtc", headers=headers):
                 pass
@@ -71,7 +70,7 @@ def test_origin_denied(headers):
 
 def test_production_origin(monkeypatch):
     monkeypatch.setenv("PUBLIC_BASE_URL", "https://safe.example/base")
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/rtc", headers=ORIGIN):
                 pass
@@ -79,9 +78,9 @@ def test_production_origin(monkeypatch):
             assert join(ws, "caller")["type"] == "ready"
 
 
-@pytest.mark.parametrize("change", [{"token": "wrong"}, {"consent": False}, {"room": "short"}, {"role": "outsider"}, {"token": "nonascii-\u0430"}])
+@pytest.mark.parametrize("change", [{"consent": False}, {"room": "short"}, {"role": "outsider"}])
 def test_join_validation(change):
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as ws:
             assert join(ws, "caller", **change)["type"] == "error"
 
@@ -92,13 +91,13 @@ def test_join_timeout(monkeypatch):
     async def fast(ws, timeout=0.01):
         return await original(ws, timeout)
     monkeypatch.setattr(rtc, "read_json", fast)
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as ws:
             assert ws.receive_json()["type"] == "error"
 
 
 def test_one_room_and_unique_roles():
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as first:
             join(first, "caller")
             for role, room in [("caller", ROOM), ("receiver", "another-room")]:
@@ -107,7 +106,7 @@ def test_one_room_and_unique_roles():
 
 
 def test_full_lifecycle_and_reinvite():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         assert len(ticket) >= 32
         for sender, peer, event in [(caller, receiver, {"type": "offer", "sdp": "v=0"}), (receiver, caller, {"type": "answer", "sdp": "v=0"}), (caller, receiver, {"type": "ice", "candidate": None})]:
@@ -123,7 +122,7 @@ def test_full_lifecycle_and_reinvite():
 
 def test_reject_and_timeout(monkeypatch):
     monkeypatch.setattr(rtc, "RING_SECONDS", 0.05)
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         caller.send_json({"type": "invite"})
         incoming = receiver.receive_json()
         caller.receive_json()
@@ -139,7 +138,7 @@ def test_reject_and_timeout(monkeypatch):
 
 @pytest.mark.parametrize("event", [{"type": "offer", "sdp": "v=0"}, {"type": "ice", "candidate": {}}])
 def test_no_relay_before_accept(event):
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         caller.send_json({"type": "invite"})
         cid = caller.receive_json()["call_id"]
         receiver.receive_json()
@@ -150,7 +149,7 @@ def test_no_relay_before_accept(event):
 
 @pytest.mark.parametrize("kind,payload", [("offer", {"sdp": "wrong direction"}), ("ice", {"candidate": "bad"}), ("answer", {"sdp": "no offer"})])
 def test_bad_relay(kind, payload):
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, _ = accept(caller, receiver)
         receiver.send_json({"type": kind, "call_id": cid, **payload})
         assert receiver.receive_json()["type"] == "error"
@@ -158,10 +157,10 @@ def test_bad_relay(kind, payload):
 
 
 def test_audio_ticket_and_diagnostic():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
-            assert start(ws, cid, TOKEN)["type"] == "error"
+            assert start(ws, cid, "invalid-ticket")["type"] == "error"
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             ready = start(ws, cid, ticket)
             assert ready["mode"] == "diagnostic"
@@ -175,7 +174,7 @@ def test_audio_ticket_and_diagnostic():
 
 @pytest.mark.parametrize("raw", [b"x", b"", bytes(8002)])
 def test_audio_frame_bounds(raw):
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             start(ws, cid, ticket)
@@ -184,7 +183,7 @@ def test_audio_frame_bounds(raw):
 
 
 def test_hangup_closes_audio():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             start(ws, cid, ticket)
@@ -196,14 +195,14 @@ def test_hangup_closes_audio():
 
 @pytest.mark.parametrize("path", ["/ws/rtc?token=hidden", "/ws/rtc-audio?token=hidden"])
 def test_query_credentials_rejected(path):
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(path, headers=ORIGIN):
                 pass
 
 
 def test_oversized_signaling():
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as ws:
             join(ws, "caller")
             ws.send_text("x" * (rtc.MAX_JSON + 1))
@@ -211,7 +210,7 @@ def test_oversized_signaling():
 
 
 def test_stale_call_ticket_invalid_after_hangup():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         caller.send_json({"type": "hangup", "call_id": cid})
         caller.receive_json()
@@ -221,10 +220,10 @@ def test_stale_call_ticket_invalid_after_hangup():
 
 
 def test_legacy_busy_slot_prevents_rtc_audio():
-    app = create_app(token=TOKEN)
+    app = create_app()
     with TestClient(app) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
-        with client.websocket_connect("/ws/audio", headers={"authorization": "Bearer " + TOKEN}) as legacy:
+        with client.websocket_connect("/ws/audio", headers={}) as legacy:
             legacy.send_json({"type": "start", "sample_rate": 16000, "channels": 1, "format": "pcm_s16le"})
             legacy.receive_json()
             with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as invalid:
@@ -246,7 +245,7 @@ def test_legacy_busy_slot_prevents_rtc_audio():
 
 
 def test_signaling_rate_limit():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, _ = accept(caller, receiver)
         for _ in range(119):
             caller.send_json({"type": "ice", "call_id": cid, "candidate": None})
@@ -259,7 +258,7 @@ def test_signaling_rate_limit():
 @pytest.mark.parametrize("first_role", ["receiver", "caller"])
 def test_ready_reports_existing_peer(first_role):
     second_role = "caller" if first_role == "receiver" else "receiver"
-    with TestClient(create_app(token=TOKEN)) as client:
+    with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as first:
             assert join(first, first_role)["peer_present"] is False
             with client.websocket_connect("/ws/rtc", headers=ORIGIN) as second:
@@ -278,7 +277,7 @@ def test_ready_reports_existing_peer(first_role):
 def test_rtc_page_security_headers(monkeypatch, base, public, websocket):
     if public:
         monkeypatch.setenv("PUBLIC_BASE_URL", public)
-    with TestClient(create_app(token=TOKEN), base_url=base) as client:
+    with TestClient(create_app(), base_url=base) as client:
         response = client.get("/rtc")
         assert response.status_code in {200, 503}
         headers = response.headers
@@ -294,7 +293,7 @@ def test_rtc_page_security_headers(monkeypatch, base, public, websocket):
 
 
 def test_untrusted_host_not_in_csp():
-    with TestClient(create_app(token=TOKEN), base_url="http://evil.example") as client:
+    with TestClient(create_app(), base_url="http://evil.example") as client:
         csp = client.get("/rtc").headers["content-security-policy"]
         assert "connect-src 'self';" in csp
         assert "evil.example" not in csp
@@ -302,7 +301,7 @@ def test_untrusted_host_not_in_csp():
 
 @pytest.mark.parametrize("first_hangup", ["caller", "receiver"])
 def test_simultaneous_hangup_and_late_messages_allow_redial(first_hangup):
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, _ = accept(caller, receiver)
         first, second = (caller, receiver) if first_hangup == "caller" else (receiver, caller)
         first.send_json({"type": "hangup", "call_id": cid})
@@ -321,7 +320,7 @@ def test_simultaneous_hangup_and_late_messages_allow_redial(first_hangup):
 
 @pytest.mark.parametrize("kind", ["ice", "offer", "answer", "hangup", "reject"])
 def test_unknown_call_still_fails_closed(kind):
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         cid, _ = accept(caller, receiver)
         caller.send_json({"type": "hangup", "call_id": cid})
         caller.receive_json()
@@ -355,7 +354,7 @@ def test_ended_call_history_bounded_expiring_and_session_scoped(monkeypatch):
 
 
 def test_late_accept_after_caller_hangup_preserves_redial():
-    with TestClient(create_app(token=TOKEN)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app()) as client, pair(client) as (caller, receiver):
         caller.send_json({"type": "invite"})
         cid = caller.receive_json()["call_id"]
         assert receiver.receive_json()["call_id"] == cid

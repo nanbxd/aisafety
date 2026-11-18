@@ -8,8 +8,7 @@ query, credentials or fragment. The wrapper opens `/rtc?role=receiver` on that o
 
 1. Deploy the backend and its WebRTC page on one HTTPS origin with a valid public certificate.
 2. Install the APK and enter that origin in **Сохранить и открыть**. Grant Android microphone permission before the receiver page opens.
-3. On the page, enter the room and SAFETY_TOKEN, consent to audio processing and join as receiver.
-   The page keeps the token in memory only. Android neither reads nor injects it.
+3. On the page, enter the room, consent to audio processing and join as receiver.
 4. Allow the origin-specific native microphone consent prompt. Runtime permission is never requested during a WebView call; if revoked, return to setup and reopen.
 5. The caller opens the same server's `/rtc?role=caller` in a browser and joins the same room.
 6. Keep the Android application open. Backgrounding, Back and rotation close the page and call.
@@ -31,7 +30,6 @@ depend on your deployment; free peer-to-peer connectivity cannot be guaranteed a
   clear in-memory credentials. Also clean up on pagehide.
 - Android calls that hook before navigating to a blank page and destroying the WebView.
   Destruction has a 250 ms fallback if the renderer does not answer.
-- Never store bearer tokens in cookies, local/session storage, URLs or form persistence.
   DOM storage, database storage, cookies, autofill and form saving are disabled by the wrapper.
 
 ## Security and lifecycle

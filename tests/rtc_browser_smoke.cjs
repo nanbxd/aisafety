@@ -34,7 +34,7 @@ fs.mkdirSync(shots, {recursive:true});
       await p.goto(base+'/rtc?role='+(i===0?'caller':'receiver'));pages.push(p);
     }
     const [caller,receiver]=pages;
-    for(const p of [receiver,caller]){await p.locator('#room').fill('synthetic-room-123');await p.locator('#token').fill('synthetic-browser-test-secret-123');await p.locator('#consent').check();await p.locator('#connect').click()}
+    for(const p of [receiver,caller]){await p.locator('#room').fill('synthetic-room-123');await p.locator('#consent').check();await p.locator('#connect').click()}
     for(const p of pages) await p.locator('#setup').waitFor({state:'hidden'});
     await caller.locator('#invite').click();
     await receiver.locator('#accept').waitFor({state:'visible'});
@@ -49,7 +49,7 @@ fs.mkdirSync(shots, {recursive:true});
     }
     for(let i=0;i<2;i++){
       await caller.locator('#invite').click();await receiver.locator('#accept').click();
-      await receiver.waitForFunction(()=>document.querySelector('#transcript').textContent.includes('безопасный'),null,{timeout:30000});
+      await receiver.waitForFunction(()=>document.querySelector('#transcript').textContent.includes('безопасный'),null,{timeout:30000}).catch(async error=>{ console.error('Receiver state:', await receiver.locator('main').innerText()); console.error('Browser errors:',errors); throw error; });
       if(i===0 && process.argv[4]==='--busy-redial') assert(await receiver.locator('#incomplete').isVisible(),'Busy retry must preserve initial audio gap warning');
       assert.match(await receiver.locator('#risk').innerText(),/тревожные/);
       assert.equal(await caller.locator('#call-state').innerText(),'Разговор идёт');

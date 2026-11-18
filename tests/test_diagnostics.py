@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 from server.app import create_app
 from tests.fake_analysis import FakeAnalysis
-from tests.test_rtc import TOKEN, ROOM, ORIGIN, pair, accept, start
+from tests.test_rtc import ROOM, ORIGIN, pair, accept, start
 
 
 @pytest.fixture(autouse=True)
@@ -16,7 +16,7 @@ def environment(monkeypatch, caplog):
 @pytest.mark.parametrize("failure", [False, True])
 def test_audio_logs_without_content(failure, caplog):
     backend = FakeAnalysis(failure=RuntimeError("PRIVATE_EXCEPTION_MARKER") if failure else None)
-    with TestClient(create_app(token=TOKEN, analysis_backend=backend)) as client, pair(client) as (caller, receiver):
+    with TestClient(create_app(analysis_backend=backend)) as client, pair(client) as (caller, receiver):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             assert start(ws, cid, ticket)["type"] == "ready"
@@ -26,7 +26,7 @@ def test_audio_logs_without_content(failure, caplog):
                 assert ws.receive_json()["type"] == "risk"
                 ws.send_json({"type": "stop"})
             assert ws.receive_json()["type"] == ("error" if failure else "done")
-    for marker in [TOKEN, ROOM, ticket, cid, "PRIVATE_TRANSCRIPT_MARKER", "PRIVATE_EXCEPTION_MARKER"]:
+    for marker in [ROOM, ticket, cid, "PRIVATE_TRANSCRIPT_MARKER", "PRIVATE_EXCEPTION_MARKER"]:
         assert marker not in caplog.text
     for marker in ["ANALYSIS_SERVICE_READY", "RTC_AUDIO_READY", "RTC_PCM_FIRST", "RTC_AUDIO_CLOSING", "ANALYSIS_SLOT_RELEASED"]:
         assert marker in caplog.text

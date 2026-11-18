@@ -17,7 +17,6 @@ import java.util.Locale
 class MainActivity : Activity() {
     private lateinit var source: Spinner
     private lateinit var endpoint: EditText
-    private lateinit var token: EditText
     private lateinit var consent: CheckBox
     private lateinit var start: Button
     private lateinit var stop: Button
@@ -85,13 +84,6 @@ class MainActivity : Activity() {
             setText(getPreferences(0).getString("endpoint", "wss://your-server.example/ws/audio"))
             body.addView(this)
         }
-        label("Ключ доступа · не сохраняется")
-        token = EditText(this).apply {
-            setSingleLine(); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            isSaveEnabled = false
-            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
-            body.addView(this)
-        }
         consent = CheckBox(this).apply {
             text = "Я согласен передать звук этой записи на указанный сервер"
             textSize = 18f
@@ -121,8 +113,8 @@ class MainActivity : Activity() {
                 val uri = URI(endpoint.text.toString().trim())
                 uri.scheme == "wss" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.fragment == null
             }.getOrDefault(false)
-            if (!valid || token.text.isBlank() || token.text.any { it.code !in 32..126 }) {
-                Toast.makeText(this, "Проверьте адрес wss:// и ключ доступа: используйте латинские буквы, цифры и знаки без переноса строки", Toast.LENGTH_LONG).show(); return
+            if (!valid) {
+                Toast.makeText(this, "Проверьте адрес сервера: нужен корректный wss:// адрес", Toast.LENGTH_LONG).show(); return
             }
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -136,7 +128,6 @@ class MainActivity : Activity() {
         val selected = intArrayOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_RECOGNITION, MediaRecorder.AudioSource.VOICE_COMMUNICATION)[source.selectedItemPosition]
         val intent = Intent(this, CaptureService::class.java).putExtra("source", selected)
             .putExtra("consent", consent.isChecked).putExtra("endpoint", endpoint.text.toString().trim())
-            .putExtra("token", token.text.toString().trim())
         starting = true; startTime = SystemClock.elapsedRealtime()
         try { startForegroundService(intent) }
         catch (_: Exception) {
@@ -189,7 +180,7 @@ class MainActivity : Activity() {
         replay.isEnabled = !busy && state.wav != null
         delete.isEnabled = !busy && (state.wav != null || File(filesDir, "latest-test.wav").exists())
         replay.text = if (player != null) "Остановить прослушивание" else "Прослушать запись"
-        source.isEnabled = !busy; endpoint.isEnabled = !busy; token.isEnabled = !busy; consent.isEnabled = !busy
+        source.isEnabled = !busy; endpoint.isEnabled = !busy; consent.isEnabled = !busy
         status.text = if (starting) "Подготовка к записи…" else state.status
         meter.progress = (state.db + 90).toInt().coerceIn(0, 90)
         meterText.text = String.format(Locale.forLanguageTag("ru-RU"), "Уровень: %.1f дБFS · %d из 30 секунд", state.db, state.seconds)

@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import hmac
 import json
 import math
 import os
@@ -13,6 +12,7 @@ from dotenv import load_dotenv
 
 from server.asr import AudioAnalysis, AnalysisError, GeminiLive
 from server.rtc import install_rtc
+from server.voximplant import install_voximplant
 from server.diagnostics import log, error
 
 SAMPLE_RATE = 16000
@@ -26,21 +26,21 @@ def level(pcm: bytes) -> float:
     return round(20 * math.log10(max(rms, 0.000001)), 1)
 
 
-def create_app(analysis_backend=None, token: str | None = None, *, load_environment: bool = False) -> FastAPI:
+def create_app(analysis_backend=None, *, load_environment: bool = False) -> FastAPI:
     """Build an app; the deployment entry point opts into local dotenv loading."""
     @asynccontextmanager
     async def lifespan(app):
         if load_environment:
             load_dotenv(override=False)
-        app.state.token = token if token is not None else os.getenv("SAFETY_TOKEN", "")
-        if len(app.state.token) < 16:
-            raise RuntimeError("Set SAFETY_TOKEN to a random secret of at least 16 characters.")
         mode = os.getenv("ANALYSIS_MODE", "diagnostic")
         if mode not in {"diagnostic", "gemini"}:
             raise RuntimeError("ANALYSIS_MODE must be diagnostic or gemini")
         app.state.analysis = analysis_backend
         if analysis_backend is None and mode == "gemini":
             app.state.analysis = GeminiLive()
+        app.state.vox_analysis = analysis_backend
+        if analysis_backend is None and mode == "gemini":
+            app.state.vox_analysis = GeminiLive(fraud_alerts=True)
         app.state.mode = "gemini" if app.state.analysis else "diagnostic"
         app.state.busy = False
         log.info("ANALYSIS_SERVICE_READY mode=%s", app.state.mode)
@@ -48,17 +48,15 @@ def create_app(analysis_backend=None, token: str | None = None, *, load_environm
 
     app = FastAPI(title="SafetyHack Voice", lifespan=lifespan)
     install_rtc(app)
+    install_voximplant(app)
 
+    @app.get("/")
     @app.get("/health")
     async def health():
         return {"status": "ok", "mode": app.state.mode, "busy": app.state.busy}
 
     @app.websocket("/ws/audio")
     async def audio(ws: WebSocket):
-        supplied = ws.headers.get("authorization", "")
-        if not hmac.compare_digest(supplied, "Bearer " + app.state.token):
-            await ws.close(code=1008)
-            return
         await ws.accept()
         if app.state.busy:
             await ws.send_json({"type": "error", "message": "Сервер занят другой сессией."})

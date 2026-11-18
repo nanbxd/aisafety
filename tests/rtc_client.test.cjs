@@ -107,7 +107,6 @@ function harness(role = 'caller') {
   const tick = async () => { for (let i = 0; i < 20; i++) await Promise.resolve(); };
   const click = async id => { await element(id).handlers.click?.(); await tick(); };
   async function join(peer = true) {
-    element('token').value = 'test-only-placeholder';
     element('setup').handlers.submit({ preventDefault() {} });
     sockets[0].open();
     sockets[0].event({ type: 'ready', role, room: element('room').value, ice_servers: [], peer_present: peer });
@@ -122,8 +121,7 @@ test('second-joining caller can invite; SDP precedes ICE; early ICE waits for re
   await h.join();
   assert.equal(h.micRequests, 0);
   assert.equal(h.elements.invite.disabled, false);
-  assert.equal(h.elements.token.value, '');
-  assert.deepEqual(Object.keys(h.sockets[0].sent[0]).sort(), ['consent', 'role', 'room', 'token', 'type']);
+  assert.deepEqual(Object.keys(h.sockets[0].sent[0]).sort(), ['consent', 'role', 'room', 'type']);
   assert.equal(h.sockets[0].url, 'wss://test.example/ws/rtc');
   await h.click('invite');
   const ws = h.sockets[0];
@@ -182,7 +180,6 @@ test('signaling error restores setup and clears consent for reconnect', async ()
   assert.equal(h.elements['joined-summary'].hidden, true);
   assert.equal(h.elements['page-title'].focused, true);
   assert.equal(h.elements.consent.checked, false);
-  assert.equal(h.elements.token.value, '');
 });
 
 test('late microphone resolution after synchronous Android stop releases its track', async () => {

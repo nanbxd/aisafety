@@ -16,7 +16,6 @@ import uvicorn
 
 from server.app import create_app
 
-TOKEN = "synthetic-browser-test-secret-123"
 ROOT = Path(__file__).resolve().parents[1]
 
 INIT = r"""
@@ -102,7 +101,7 @@ def main():
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    app = create_app(analysis_backend=SyntheticAnalysis(), token=TOKEN)
+    app = create_app(analysis_backend=SyntheticAnalysis())
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error", access_log=False, ws_max_size=70000))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -143,7 +142,6 @@ def main():
             # First and second joiner states, fixed room and explicit consent.
             for page in [receiver, caller]:
                 page.locator("#room").fill("synthetic-room-123")
-                page.locator("#token").fill(TOKEN)
                 page.locator("#consent").check()
                 page.locator("#connect").click()
             expect(caller.locator("#invite")).to_be_enabled(timeout=15000)

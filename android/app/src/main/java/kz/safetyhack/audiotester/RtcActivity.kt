@@ -1,4 +1,4 @@
-﻿package kz.safetyhack.audiotester
+package kz.safetyhack.audiotester
 
 import android.Manifest
 import android.app.Activity
@@ -70,7 +70,7 @@ class RtcActivity : Activity() {
             body.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
         addressLabel.labelFor = address.id
-        label("Сохраняется только адрес. Комнату и ключ доступа укажите на странице сервера; ключ действует только до закрытия страницы.")
+        label("Сохраняется только адрес. На странице сервера укажите комнату и подтвердите согласие на анализ.")
         if (message.isNotEmpty()) label(message).accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         button("Сохранить и открыть") {
             val valid = RtcPolicy.configuredOrigin(address.text.toString())

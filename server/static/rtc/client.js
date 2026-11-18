@@ -1,8 +1,8 @@
-/* Same-origin foreground-only WebRTC. Credentials never leave memory or enter URLs. */
+/* Same-origin foreground-only WebRTC. Audio tickets never leave memory or enter URLs. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const ui = Object.fromEntries(['setup', 'page-title', 'call-title', 'joined-summary', 'role', 'room', 'token', 'consent', 'connect', 'random-room', 'invite', 'accept', 'reject', 'hangup', 'mute', 'playback', 'disconnect', 'remote', 'call-state', 'analysis-state', 'incomplete', 'risk', 'reasons', 'transcript', 'analysis'].map(id => [id, $(id)]));
+  const ui = Object.fromEntries(['setup', 'page-title', 'call-title', 'joined-summary', 'role', 'room', 'consent', 'connect', 'random-room', 'invite', 'accept', 'reject', 'hangup', 'mute', 'playback', 'disconnect', 'remote', 'call-state', 'analysis-state', 'incomplete', 'risk', 'reasons', 'transcript', 'empty-illustration', 'analysis'].map(id => [id, $(id)]));
   let session = null;
   let call = null;
   let connecting = false;
@@ -17,7 +17,7 @@
   function controls() {
     const joined = Boolean(session && session.ready);
     const busy = Boolean(call);
-    for (const field of ['role', 'room', 'token', 'consent', 'random-room']) ui[field].disabled = Boolean(session) || connecting;
+    for (const field of ['role', 'room', 'consent', 'random-room']) ui[field].disabled = Boolean(session) || connecting;
     ui.connect.disabled = Boolean(session) || connecting;
     ui.disconnect.disabled = !session;
     ui.invite.hidden = ui.role.value !== 'caller';
@@ -43,6 +43,8 @@
   function resetAnalysis() {
     ui.incomplete.hidden = true;
     ui.risk.textContent = 'Оценки пока нет.';
+    ui.risk.setAttribute('data-level', 'unknown');
+    ui['empty-illustration'].hidden = false;
     ui.reasons.replaceChildren();
     ui.transcript.textContent = 'Текст появится после начала разговора.';
     analysisState(session.role === 'receiver' ? 'Ожидание ответа на звонок.' : 'Анализ доступен принимающему участнику.');
@@ -117,7 +119,6 @@
     if (s) clearTimer(s.timer);
     stopCall(message);
     if (s) closeSocket(s.socket);
-    ui.token.value = '';
     ui.consent.checked = false;
     controls();
   }
@@ -295,9 +296,11 @@
         c.text.push(data.text.slice(0, 12000));
         while (c.text.join('\n').length > 24000) c.text.shift();
         ui.transcript.textContent = c.text.join('\n');
+        ui['empty-illustration'].hidden = true;
         analysisState('Речь собеседника распознаётся через Google Gemini Live.');
       } else if (data.type === 'risk' && c.audioReady) {
         const labels = { low: 'Модель не отметила явных признаков — это не гарантия безопасности.', medium: 'Есть повод проверить просьбу.', high: 'Обнаружены тревожные признаки.' };
+        ui.risk.setAttribute('data-level', Object.hasOwn(labels, data.level) ? data.level : 'unknown');
         ui.risk.textContent = labels[data.level] || 'Оценка риска недоступна.';
         if (typeof data.message === 'string') ui.risk.textContent += ` ${data.message.slice(0, 4000)}`;
         ui.reasons.replaceChildren();
@@ -333,12 +336,12 @@
       s.ready = true;
       s.peer = data.peer_present === true;
       s.iceServers = data.ice_servers;
-      callState(s.peer ? 'Собеседник в комнате. Можно позвонить.' : 'Подключено. Ожидание собеседника в этой комнате.');
+      callState(s.peer ? (s.role === 'caller' ? 'Собеседник в комнате. Можно позвонить.' : 'Собеседник в комнате. Ожидание входящего звонка.') : 'Подключено. Ожидание собеседника в этой комнате.');
       controls();
       return;
     }
-    if (data.type === 'error') throw new Error('Сервер отклонил подключение или действие. Проверьте ключ, комнату и свободную роль; подключитесь заново.');
-    if (data.type === 'peer-joined') { s.peer = true; if (!call) callState('Собеседник в комнате. Можно позвонить.'); controls(); return; }
+    if (data.type === 'error') throw new Error('Сервер отклонил подключение или действие. Проверьте комнату и свободную роль; подключитесь заново.');
+    if (data.type === 'peer-joined') { s.peer = true; if (!call) callState(s.role === 'caller' ? 'Собеседник в комнате. Можно позвонить.' : 'Собеседник в комнате. Ожидание входящего звонка.'); controls(); return; }
     if (data.type === 'peer-left') { s.peer = false; stopCall('Собеседник отключился. Ожидание нового подключения.'); return; }
     if (data.type === 'incoming') {
       if (typeof data.call_id !== 'string' || !data.call_id) throw new Error('Неверное приглашение.');
@@ -398,24 +401,20 @@
     if ((location.protocol !== 'https:' && !(location.protocol === 'http:' && loopback)) || !window.isSecureContext) { callState('Для звонка нужен доверенный HTTPS сервер. HTTP разрешён только на localhost для разработки.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.RTCPeerConnection || !window.WebSocket) { callState('Этот браузер не поддерживает звонки. Обновите браузер или Android System WebView.'); return; }
     connecting = true;
-    const token = ui.token.value;
-    ui.token.value = '';
     const s = { role: ui.role.value, room: ui.room.value, ready: false, peer: false, socket: null, chain: Promise.resolve() };
     session = s;
     try {
       const socket = new WebSocket(wsUrl('/ws/rtc'));
       s.socket = socket;
-      let credential = token;
       s.timer = setTimeout(() => { if (session === s) stopAll('Сервер не ответил. Проверьте сеть и подключитесь заново.'); }, 12000);
       socket.onopen = () => {
-        if (session !== s) { credential = null; closeSocket(socket); return; }
-        socket.send(JSON.stringify({ type: 'join', token: credential, room: s.room, role: s.role, consent: true }));
-        credential = null;
+        if (session !== s) { closeSocket(socket); return; }
+        socket.send(JSON.stringify({ type: 'join', room: s.room, role: s.role, consent: true }));
       };
       socket.onmessage = event => {
-        s.chain = s.chain.then(() => signal(s, JSON.parse(event.data))).catch(() => { if (session === s) stopAll('Соединение отклонено или прервано. Проверьте ключ, комнату, свободную роль и сеть. Подключитесь заново.'); });
+        s.chain = s.chain.then(() => signal(s, JSON.parse(event.data))).catch(() => { if (session === s) stopAll('Соединение отклонено или прервано. Проверьте комнату, свободную роль и сеть. Подключитесь заново.'); });
       };
-      socket.onclose = () => { credential = null; if (session === s) stopAll('Соединение закрыто. Проверьте ключ, комнату, свободную роль и сеть; подключитесь заново.'); };
+      socket.onclose = () => { if (session === s) stopAll('Соединение закрыто. Проверьте комнату, свободную роль и сеть; подключитесь заново.'); };
       socket.onerror = () => { if (session === s) stopAll('Не удалось связаться с сервером. Проверьте сеть и подключитесь заново.'); };
       callState('Подключение к комнате…');
     } catch (_) { stopAll('Не удалось открыть соединение. Проверьте адрес сервера.'); }
