@@ -79,9 +79,10 @@ def test_unregistration_and_expiry(client):
             assert receiver.receive_json()["type"] == "push-ready"
             receiver.send_json({"type": "push-unregister"})
         assert caller.receive_json()["push_available"] is False
-        assert ROOM not in client.app.state.rtc.devices
-    client.app.state.rtc.devices[ROOM] = (TOKEN, time.time() - 1)
-    assert client.app.state.rtc.device(ROOM) is None
+        assert ROOM not in client.app.state.rtc.find(ROOM).devices
+    hub = client.app.state.rtc.for_room(ROOM)
+    hub.devices[ROOM] = (TOKEN, time.time() - 1)
+    assert hub.device(ROOM) is None
 
 
 def test_push_body_limit(client):

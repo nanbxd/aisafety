@@ -9,7 +9,8 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <application android:label="Skepticall" android:theme="@style/Theme.Skepticall"
+    <application android:label="@string/app_name" android:theme="@style/Theme.Skepticall"
+        android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round"
         android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <service android:name=".CallMessagingService" android:exported="false">
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>

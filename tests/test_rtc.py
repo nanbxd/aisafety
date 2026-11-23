@@ -96,13 +96,38 @@ def test_join_timeout(monkeypatch):
             assert ws.receive_json()["type"] == "error"
 
 
-def test_one_room_and_unique_roles():
+def test_addresses_are_isolated_and_roles_are_unique():
     with TestClient(create_app()) as client:
         with client.websocket_connect("/ws/rtc", headers=ORIGIN) as first:
             join(first, "caller")
-            for role, room in [("caller", ROOM), ("receiver", "another-room")]:
-                with client.websocket_connect("/ws/rtc", headers=ORIGIN) as ws:
-                    assert join(ws, role, room=room)["type"] == "error"
+            with client.websocket_connect("/ws/rtc", headers=ORIGIN) as duplicate:
+                assert join(duplicate, "caller")["type"] == "error"
+            with client.websocket_connect("/ws/rtc", headers=ORIGIN) as independent:
+                ready = join(independent, "receiver", room="another-room")
+                assert ready["type"] == "ready"
+                assert ready["peer_present"] is False
+
+
+def test_independent_addresses_can_ring_at_the_same_time():
+    second_room = "second-address-123"
+    with TestClient(create_app()) as client:
+        with client.websocket_connect("/ws/rtc", headers=ORIGIN) as caller_one, \
+             client.websocket_connect("/ws/rtc", headers=ORIGIN) as receiver_one, \
+             client.websocket_connect("/ws/rtc", headers=ORIGIN) as caller_two, \
+             client.websocket_connect("/ws/rtc", headers=ORIGIN) as receiver_two:
+            assert join(caller_one, "caller")["type"] == "ready"
+            assert join(receiver_one, "receiver")["type"] == "ready"
+            caller_one.receive_json()
+            assert join(caller_two, "caller", room=second_room)["type"] == "ready"
+            assert join(receiver_two, "receiver", room=second_room)["type"] == "ready"
+            caller_two.receive_json()
+            caller_one.send_json({"type": "invite"})
+            caller_two.send_json({"type": "invite"})
+            first_id = caller_one.receive_json()["call_id"]
+            second_id = caller_two.receive_json()["call_id"]
+            assert receiver_one.receive_json()["call_id"] == first_id
+            assert receiver_two.receive_json()["call_id"] == second_id
+            assert first_id != second_id
 
 
 def test_full_lifecycle_and_reinvite():
@@ -234,7 +259,7 @@ def test_legacy_busy_slot_prevents_rtc_audio():
                 assert start(ws, cid, ticket) == {"type": "error", "code": "busy", "message": "Analysis is busy"}
                 with pytest.raises(WebSocketDisconnect):
                     ws.receive_json()
-            assert app.state.rtc.ticket == ticket
+            assert app.state.rtc.find(ROOM).ticket == ticket
             assert app.state.busy
             legacy.send_json({"type": "stop"})
             assert legacy.receive_json()["type"] == "done"

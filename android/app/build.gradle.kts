@@ -1,7 +1,7 @@
 plugins {
-    id("com.google.gms.google-services")
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+    id("com.google.gms.google-services")
 }
 android {
     buildFeatures { buildConfig = true }
@@ -15,8 +15,8 @@ android {
         applicationId = "kz.safetyhack.audiotester"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6-push-calls"
+        versionCode = 7
+        versionName = "0.7-skepticall"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

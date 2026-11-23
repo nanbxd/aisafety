@@ -2,7 +2,7 @@
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
-  const ui = Object.fromEntries(['setup', 'page-title', 'call-title', 'joined-summary', 'role', 'room', 'consent', 'connect', 'random-room', 'invite', 'accept', 'reject', 'hangup', 'mute', 'playback', 'disconnect', 'remote', 'call-state', 'analysis-state', 'incomplete', 'risk', 'reasons', 'transcript', 'empty-illustration', 'analysis'].map(id => [id, $(id)]));
+  const ui = Object.fromEntries(['setup', 'page-title', 'call-title', 'joined-summary', 'role', 'room', 'consent', 'connect', 'invite', 'accept', 'reject', 'hangup', 'mute', 'playback', 'disconnect', 'remote', 'call-state', 'analysis-state', 'incomplete', 'risk', 'reasons', 'transcript', 'empty-illustration', 'analysis'].map(id => [id, $(id)]));
   let session = null;
   let call = null;
   let connecting = false;
@@ -13,11 +13,18 @@
   const analysisState = text => { ui['analysis-state'].textContent = text; };
   const closeSocket = socket => { if (socket) { try { socket.close(); } catch (_) { /* already closed */ } } };
   const clearTimer = id => { if (id) clearTimeout(id); };
+  function phoneAddress(value) {
+    if ([...value].some(char => !/[0-9+\-() ]/.test(char))) return null;
+    let digits = value.replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('8')) digits = `7${digits.slice(1)}`;
+    if (digits.length === 10) digits = `7${digits}`;
+    return digits.length >= 10 && digits.length <= 15 ? { display: `+${digits}`, key: `tel_${digits}` } : null;
+  }
 
   function controls() {
     const joined = Boolean(session && session.ready);
     const busy = Boolean(call);
-    for (const field of ['role', 'room', 'consent', 'random-room']) ui[field].disabled = Boolean(session) || connecting;
+    for (const field of ['role', 'room', 'consent']) ui[field].disabled = Boolean(session) || connecting;
     ui.connect.disabled = Boolean(session) || connecting;
     ui.disconnect.disabled = !session;
     ui.invite.hidden = ui.role.value !== 'caller';
@@ -33,7 +40,7 @@
     ui.mute.textContent = call && call.muted ? 'Включить микрофон' : 'Выключить микрофон';
     ui.setup.hidden = joined;
     ui['joined-summary'].hidden = !joined;
-    ui['joined-summary'].textContent = joined ? `Комната: ${session.room}. Ваша роль: ${session.role === 'caller' ? 'звоню' : 'принимаю звонок'}.` : '';
+    ui['joined-summary'].textContent = joined ? `Адрес: ${session.displayAddress}. Режим: ${session.role === 'caller' ? 'звоню' : 'принимаю звонки'}.` : '';
     if (joined !== showingJoined) {
       showingJoined = joined;
       if (!document.hidden) ui[joined ? 'call-title' : 'page-title'].focus();
@@ -336,12 +343,12 @@
       s.ready = true;
       s.peer = data.peer_present === true;
       s.iceServers = data.ice_servers;
-      callState(s.peer ? (s.role === 'caller' ? 'Собеседник в комнате. Можно позвонить.' : 'Собеседник в комнате. Ожидание входящего звонка.') : 'Подключено. Ожидание собеседника в этой комнате.');
+      callState(s.role === 'receiver' ? 'Входящие включены.' : (s.peer ? 'Адрес найден. Можно позвонить.' : 'Адрес пока недоступен.'));
       controls();
       return;
     }
-    if (data.type === 'error') throw new Error('Сервер отклонил подключение или действие. Проверьте комнату и свободную роль; подключитесь заново.');
-    if (data.type === 'peer-joined') { s.peer = true; if (!call) callState(s.role === 'caller' ? 'Собеседник в комнате. Можно позвонить.' : 'Собеседник в комнате. Ожидание входящего звонка.'); controls(); return; }
+    if (data.type === 'error') throw new Error('Сервер отклонил подключение или действие. Проверьте адрес; подключитесь заново.');
+    if (data.type === 'peer-joined') { s.peer = true; if (!call) callState(s.role === 'caller' ? 'Адрес найден. Можно позвонить.' : 'Входящие включены.'); controls(); return; }
     if (data.type === 'peer-left') { s.peer = false; stopCall('Собеседник отключился. Ожидание нового подключения.'); return; }
     if (data.type === 'incoming') {
       if (typeof data.call_id !== 'string' || !data.call_id) throw new Error('Неверное приглашение.');
@@ -400,8 +407,12 @@
     const loopback = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
     if ((location.protocol !== 'https:' && !(location.protocol === 'http:' && loopback)) || !window.isSecureContext) { callState('Для звонка нужен доверенный HTTPS сервер. HTTP разрешён только на localhost для разработки.'); return; }
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.RTCPeerConnection || !window.WebSocket) { callState('Этот браузер не поддерживает звонки. Обновите браузер или Android System WebView.'); return; }
+    const address = phoneAddress(ui.room.value);
+    if (!address) { ui.room.setCustomValidity('Введите номер от 10 до 15 цифр.'); ui.room.reportValidity(); return; }
+    ui.room.setCustomValidity('');
+    ui.room.value = address.display;
     connecting = true;
-    const s = { role: ui.role.value, room: ui.room.value, ready: false, peer: false, socket: null, chain: Promise.resolve() };
+    const s = { role: ui.role.value, room: address.key, displayAddress: address.display, ready: false, peer: false, socket: null, chain: Promise.resolve() };
     session = s;
     try {
       const socket = new WebSocket(wsUrl('/ws/rtc'));
@@ -412,11 +423,11 @@
         socket.send(JSON.stringify({ type: 'join', room: s.room, role: s.role, consent: true }));
       };
       socket.onmessage = event => {
-        s.chain = s.chain.then(() => signal(s, JSON.parse(event.data))).catch(() => { if (session === s) stopAll('Соединение отклонено или прервано. Проверьте комнату, свободную роль и сеть. Подключитесь заново.'); });
+        s.chain = s.chain.then(() => signal(s, JSON.parse(event.data))).catch(() => { if (session === s) stopAll('Соединение отклонено или прервано. Проверьте адрес и сеть. Подключитесь заново.'); });
       };
-      socket.onclose = () => { if (session === s) stopAll('Соединение закрыто. Проверьте комнату, свободную роль и сеть; подключитесь заново.'); };
+      socket.onclose = () => { if (session === s) stopAll('Соединение закрыто. Проверьте адрес и сеть; подключитесь заново.'); };
       socket.onerror = () => { if (session === s) stopAll('Не удалось связаться с сервером. Проверьте сеть и подключитесь заново.'); };
-      callState('Подключение к комнате…');
+      callState('Подключение адреса…');
     } catch (_) { stopAll('Не удалось открыть соединение. Проверьте адрес сервера.'); }
     connecting = false;
     controls();
@@ -424,12 +435,6 @@
 
   ui.setup.addEventListener('submit', connect);
   ui.role.addEventListener('change', controls);
-  function randomRoom() {
-    const bytes = new Uint8Array(12);
-    crypto.getRandomValues(bytes);
-    ui.room.value = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
-  }
-  ui['random-room'].addEventListener('click', randomRoom);
   ui.disconnect.addEventListener('click', () => stopAll('Отключено. Для нового звонка подключитесь заново.'));
   ui.invite.addEventListener('click', async () => {
     if (!session || !session.ready || !session.peer || call) return;
@@ -506,6 +511,5 @@
   window.addEventListener('pagehide', () => stopAll('Страница закрыта: звонок остановлен.'));
   const requestedRole = new URLSearchParams(location.search).get('role');
   if (requestedRole === 'caller' || requestedRole === 'receiver') ui.role.value = requestedRole;
-  randomRoom();
   controls();
 })();
