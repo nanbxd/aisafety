@@ -10,8 +10,11 @@ services:
     dockerContext: .
     healthCheckPath: /health
     envVars:
+      # Optional FCM: upload SERVER key via Render Secret Files, then manually set
+      # GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase-service-account.json
+      # See FIREBASE.md. Do not upload Android google-services.json here.
       - key: PUBLIC_BASE_URL
-        sync: false
+        value: https://safetyhack-webrtc.onrender.com
       - key: ANALYSIS_MODE
         value: gemini
       - key: GEMINI_API_KEY

@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from server.asr import AudioAnalysis, AnalysisError
 from server.diagnostics import log, error
+from server import push
 
 RING_SECONDS = 60
 JOIN_SECONDS = 10
@@ -128,6 +129,28 @@ class Hub:
         self.timer = None
         self.audio_end = asyncio.Event()
         self.ended_calls = deque(maxlen=ENDED_CALL_LIMIT)
+        self.devices = {}
+        self.push_tasks = set()
+        self.push_target = None
+        self.expires_at = 0
+
+    def device(self, room):
+        self.devices = {r: entry for r, entry in self.devices.items() if entry[1] > time.time()}
+        return self.devices.get(room, (None, 0))[0] if push.configured() else None
+
+    def deliver(self, token, data):
+        async def deliver():
+            sent = await asyncio.to_thread(push.send, token, data)
+            if not sent and data["type"] == "incoming":
+                async with self.lock:
+                    if self.call_id == data["call_id"] and not self.accepted and "receiver" not in self.peers:
+                        call_id = self.call_id
+                        self.reset()
+                        with contextlib.suppress(Exception):
+                            await self.broadcast({"type": "rejected", "call_id": call_id, "reason": "push_unavailable"})
+        task = asyncio.create_task(deliver())
+        self.push_tasks.add(task)
+        task.add_done_callback(self.push_tasks.discard)
 
     def is_ended_call(self, call_id, ws):
         now = time.monotonic()
@@ -146,6 +169,9 @@ class Hub:
             await self.send(role, event)
 
     def reset(self):
+        if self.call_id and self.push_target:
+            self.deliver(self.push_target, {"type": "cancel", "room": self.room, "call_id": self.call_id})
+        self.push_target = None
         if self.call_id is not None:
             self.ended_calls.append((time.monotonic() + ENDED_CALL_TTL, self.room,
                                      self.call_id, tuple(self.peers.values())))
@@ -188,6 +214,35 @@ def install_rtc(app):
             turn = False
         return {"asr_configured": app.state.analysis is not None, "turn_configured": turn}
 
+    @app.post("/api/rtc/push")
+    async def push_action(request: Request):
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 8192:
+                raise HTTPException(413)
+        try:
+            data = json.loads(body)
+            if not isinstance(data, dict):
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise HTTPException(400, "Invalid request")
+        async with hub.lock:
+            token = data.get("token")
+            valid = (isinstance(token, str) and hub.push_target is not None
+                     and hmac.compare_digest(token.encode(), hub.push_target.encode())
+                     and data.get("room") == hub.room and data.get("call_id") == hub.call_id
+                     and not hub.accepted and hub.expires_at > time.time())
+            if not valid:
+                raise HTTPException(404, "Call unavailable")
+            if data.get("action") == "reject":
+                call_id = hub.call_id
+                hub.reset()
+                await hub.broadcast({"type": "rejected", "call_id": call_id})
+            elif data.get("action") != "check":
+                raise HTTPException(400, "Invalid action")
+            return {"ok": True}
+
     @app.websocket("/ws/rtc")
     async def signaling(ws: WebSocket):
         if not allowed_origin(ws) or ws.query_params:
@@ -203,6 +258,9 @@ def install_rtc(app):
                 raise ValueError("Invalid join")
             servers = ice_servers()
             async with hub.lock:
+                resume = start.get("resume_call")
+                if resume is not None and (role != "receiver" or resume != hub.call_id or hub.accepted or hub.room != room):
+                    raise ValueError("Call expired")
                 if (hub.room and hub.room != room) or role in hub.peers:
                     raise ValueError("Room or role is busy")
                 hub.room = room
@@ -210,8 +268,10 @@ def install_rtc(app):
                 joined = True
                 other = "receiver" if role == "caller" else "caller"
                 await hub.send(role, {"type": "ready", "role": role, "room": room,
-                                      "ice_servers": servers, "peer_present": other in hub.peers})
+                                      "ice_servers": servers, "peer_present": other in hub.peers or (role == "caller" and bool(hub.device(room)))})
                 await hub.send(other, {"type": "peer-joined", "role": role})
+                if role == "receiver" and hub.call_id and not hub.accepted:
+                    await hub.send(role, {"type": "incoming", "call_id": hub.call_id})
             rates = deque()
             while True:
                 event = await read_json(ws, 900)
@@ -223,12 +283,32 @@ def install_rtc(app):
                     raise ValueError("Signaling rate exceeded")
                 kind = event.get("type")
                 async with hub.lock:
+                    if kind == "push-register":
+                        token = event.get("token")
+                        if role != "receiver" or not isinstance(token, str) or not 20 <= len(token) <= 4096:
+                            raise ValueError("Invalid push registration")
+                        hub.device(room)  # Expire old registrations before enforcing bound.
+                        if room not in hub.devices and len(hub.devices) >= 128:
+                            raise ValueError("Push registration capacity reached")
+                        hub.devices[room] = (token, time.time() + 86400)
+                        await hub.send(role, {"type": "push-ready", "enabled": push.configured()})
+                        continue
+                    if kind == "push-unregister":
+                        if role != "receiver":
+                            raise ValueError("Invalid push role")
+                        hub.devices.pop(room, None)
+                        continue
                     if kind == "invite":
-                        if role != "caller" or len(hub.peers) != 2 or hub.call_id:
+                        if role != "caller" or (len(hub.peers) != 2 and not hub.device(room)) or hub.call_id:
                             raise ValueError("Cannot invite")
                         hub.call_id = secrets.token_urlsafe(18)
                         hub.audio_end = asyncio.Event()
                         hub.timer = asyncio.create_task(hub.expire(hub.call_id))
+                        hub.expires_at = int(time.time() + RING_SECONDS)
+                        if "receiver" not in hub.peers:
+                            hub.push_target = hub.device(room)
+                            hub.deliver(hub.push_target, {"type": "incoming", "room": room,
+                                        "call_id": hub.call_id, "expires_at": str(hub.expires_at)})
                         await hub.broadcast({"type": "incoming", "call_id": hub.call_id})
                         continue
                     if not hub.call_id or event.get("call_id") != hub.call_id:
@@ -244,6 +324,8 @@ def install_rtc(app):
                             await hub.broadcast({"type": "rejected", "call_id": call_id})
                         else:
                             hub.accepted = True
+                            if hub.push_target:
+                                hub.deliver(hub.push_target, {"type": "cancel", "room": room, "call_id": call_id})
                             hub.ticket = secrets.token_urlsafe(32)
                             if hub.timer:
                                 hub.timer.cancel()
@@ -289,7 +371,8 @@ def install_rtc(app):
                         call_id = hub.call_id
                         hub.reset()
                         with contextlib.suppress(Exception):
-                            await hub.broadcast({"type": "peer-left", "role": role, "call_id": call_id})
+                            await hub.broadcast({"type": "peer-left", "role": role, "call_id": call_id,
+                                                 "push_available": role == "receiver" and bool(hub.device(hub.room))})
                         if not hub.peers:
                             hub.room = None
                             hub.ended_calls.clear()
