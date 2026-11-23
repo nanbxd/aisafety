@@ -1,5 +1,5 @@
 <resources>
-    <style name="Theme.SafetyHack" parent="android:style/Theme.Material.NoActionBar">
+    <style name="Theme.Skepticall" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:colorAccent">#B7C6FF</item>
         <item name="android:windowLightStatusBar">false</item>

@@ -57,7 +57,7 @@ class CallService : Service() {
             vibrationPattern = longArrayOf(0, 700, 500, 700, 500)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         })
-        wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SafetyHack:Call").apply { setReferenceCounted(false) }
+        wakeLock = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Skepticall:Call").apply { setReferenceCounted(false) }
         CallRuntime.observe(observer)
     }
 
@@ -153,12 +153,12 @@ class CallService : Service() {
         .setColor(0xff2949ba.toInt())
 
     private fun incomingNotification(): Notification {
-        val builder = base(INCOMING_CHANNEL).setContentTitle("Входящий звонок SafetyHack")
+        val builder = base(INCOMING_CHANNEL).setContentTitle("Входящий звонок Skepticall")
             .setContentText("Собеседник ожидает ответа")
             .setCategory(Notification.CATEGORY_CALL)
             .setTimeoutAfter(70000)
         if (Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник SafetyHack").setImportant(true).build(), command(DECLINE), open(ANSWER)))
+            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), open(ANSWER)))
         } else {
             builder.addAction(Notification.Action.Builder(null, "Отклонить", command(DECLINE)).build())
                 .addAction(Notification.Action.Builder(null, "Ответить", open(ANSWER)).build())
@@ -168,11 +168,11 @@ class CallService : Service() {
     }
 
     private fun sessionNotification(message: String): Notification {
-        val builder = base(SESSION_CHANNEL).setContentTitle(if (engine.state.inCall) "Разговор SafetyHack" else "SafetyHack на связи")
+        val builder = base(SESSION_CHANNEL).setContentTitle(if (engine.state.inCall) "Разговор Skepticall" else "Skepticall на связи")
             .setContentText(message)
             .setCategory(if (engine.state.busy) Notification.CATEGORY_CALL else Notification.CATEGORY_SERVICE)
         if (engine.state.inCall && Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName("Собеседник SafetyHack").build(), command(HANGUP)))
+            builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName("Собеседник Skepticall").build(), command(HANGUP)))
         } else if (engine.state.busy) {
             builder.addAction(Notification.Action.Builder(null, "Завершить", command(HANGUP)).build())
         } else builder.addAction(Notification.Action.Builder(null, "Выйти из комнаты", command(LEAVE)).build())

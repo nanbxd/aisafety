@@ -1,4 +1,4 @@
-﻿package kz.safetyhack.audiotester
+package kz.safetyhack.audiotester
 
 import android.Manifest
 import android.app.Activity
@@ -75,7 +75,7 @@ class RtcActivity : Activity() {
         val top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; setPadding(dp(24), dp(12), dp(24), dp(12))
         }
-        top.addView(text("SafetyHack", 22f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        top.addView(text("Skepticall", 22f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
         top.addView(button("Помощь", false) { showHelp() })
         root.addView(top)
         scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
@@ -109,7 +109,7 @@ class RtcActivity : Activity() {
         equal(roomActions, button("Новый код", false) { room.setText(newRoom()) })
         equal(roomActions, button("Поделиться", false) {
             startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Комната SafetyHack: ${room.text.toString().trim()}. Откройте приложение и введите этот код.")
+                type = "text/plain"; putExtra(Intent.EXTRA_TEXT, "Комната Skepticall: ${room.text.toString().trim()}. Откройте приложение и введите этот код.")
             }, "Код комнаты"))
         })
         consent = CheckBox(this).apply {
@@ -294,7 +294,7 @@ class RtcActivity : Activity() {
                 }
             }
             if (answer) acceptPush() else android.app.AlertDialog.Builder(this)
-                .setTitle("Входящий звонок SafetyHack").setMessage("Ответить собеседнику?")
+                .setTitle("Входящий звонок Skepticall").setMessage("Ответить собеседнику?")
                 .setPositiveButton("Ответить") { _, _ -> acceptPush() }
                 .setNegativeButton("Отклонить") { _, _ -> PushCalls.reject(this, code, call) }.show()
             return

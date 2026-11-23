@@ -75,12 +75,12 @@ object PushCalls {
             .setData(Uri.parse("safetyhack://push/$call/reject")).putExtra("room", room).putExtra("call_id", call),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = Notification.Builder(c, CallService.INCOMING_CHANNEL)
-            .setSmallIcon(R.drawable.ic_call_notification).setContentTitle("Входящий звонок SafetyHack")
+            .setSmallIcon(R.drawable.ic_call_notification).setContentTitle("Входящий звонок Skepticall")
             .setContentText("Собеседник ожидает ответа").setContentIntent(activity(OPEN))
             .setCategory(Notification.CATEGORY_CALL).setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true).setOnlyAlertOnce(true).setTimeoutAfter((expires - System.currentTimeMillis()).coerceIn(1, 60000))
         if (Build.VERSION.SDK_INT >= 31) builder.setStyle(Notification.CallStyle.forIncomingCall(
-            Person.Builder().setName("Собеседник SafetyHack").setImportant(true).build(), reject, activity(ANSWER)))
+            Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), reject, activity(ANSWER)))
         else builder.addAction(Notification.Action.Builder(null, "Отклонить", reject).build())
             .addAction(Notification.Action.Builder(null, "Ответить", activity(ANSWER)).build())
         // Cold-start incoming uses CallStyle on the lock screen. Only an explicit

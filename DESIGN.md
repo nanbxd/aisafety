@@ -1,5 +1,5 @@
 ---
-name: SafetyHack
+name: Skepticall
 description: Native Android voice-call workspace with explicit consent and remote speech analysis.
 colors:
   primary: "#2949BA"
@@ -20,7 +20,7 @@ colors:
   dark-danger: "#FFB4AB"
 ---
 
-# Design System: SafetyHack
+# Design System: Skepticall
 
 ## Overview
 
@@ -32,7 +32,7 @@ The separate legacy browser surface remains implemented by [HTML](server/static/
 
 ## Colors
 
-The frontmatter contains the native palette. Blue primary actions and pale blue secondary surfaces sit on cool neutral backgrounds. The dark palette follows the Android system night setting. Primary text, supporting text and primary-button text each have explicit light and dark assignments. The application uses `Theme.SafetyHack`, with [light theme resources](android/app/src/main/res/values/styles.xml) and [night theme resources](android/app/src/main/res/values-night/styles.xml) setting the matching accent, window background and system-bar appearance. The separate microphone diagnostic activity explicitly retains the platform light theme.
+The frontmatter contains the native palette. Blue primary actions and pale blue secondary surfaces sit on cool neutral backgrounds. The dark palette follows the Android system night setting. Primary text, supporting text and primary-button text each have explicit light and dark assignments. The application uses `Theme.Skepticall`, with [light theme resources](android/app/src/main/res/values/styles.xml) and [night theme resources](android/app/src/main/res/values-night/styles.xml) setting the matching accent, window background and system-bar appearance. The separate microphone diagnostic activity explicitly retains the platform light theme.
 
 High-risk text and the end-call action use the danger color. Medium and low assessments currently use ordinary text; all assessments have textual labels. Color must not imply that an unavailable assessment is safe.
 

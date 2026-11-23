@@ -46,7 +46,7 @@ def create_app(analysis_backend=None, *, load_environment: bool = False) -> Fast
         log.info("ANALYSIS_SERVICE_READY mode=%s", app.state.mode)
         yield
 
-    app = FastAPI(title="SafetyHack Voice", lifespan=lifespan)
+    app = FastAPI(title="Skepticall Voice", lifespan=lifespan)
     install_rtc(app)
     install_voximplant(app)
 
