@@ -25,9 +25,12 @@ class CallService : Service() {
         private const val SESSION_CHANNEL = "call_session_v1"
         private const val SESSION_ID = 40
         private const val INCOMING_ID = 41
-        fun join(context: Context, room: String, role: String, resumeCall: String? = null) {
+        fun join(context: Context, room: String, role: String, resumeCall: String? = null,
+                 homeAddress: String? = null, autoInvite: Boolean = false) {
             context.startForegroundService(Intent(context, CallService::class.java).setAction(JOIN)
-                .putExtra("room", room).putExtra("role", role).putExtra("consent", true).putExtra("resume_call", resumeCall))
+                .putExtra("room", room).putExtra("role", role).putExtra("consent", true)
+                .putExtra("resume_call", resumeCall).putExtra("home_address", homeAddress)
+                .putExtra("auto_invite", autoInvite))
         }
     }
 
@@ -39,6 +42,10 @@ class CallService : Service() {
     private var stopping = false
     private var incomingToken: String? = null
     private var lastSummary = ""
+    private var switching = false
+    private var pendingInvite = false
+    private var returnAddress: String? = null
+    private var outgoingStarted = false
 
     override fun onBind(intent: Intent?) = null
     override fun onCreate() {
@@ -63,7 +70,6 @@ class CallService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == JOIN) {
-            if (started) return START_NOT_STICKY
             val room = intent.getStringExtra("room") ?: ""
             val role = intent.getStringExtra("role") ?: ""
             if (!intent.getBooleanExtra("consent", false) || !Regex("[A-Za-z0-9_-]{8,64}").matches(room) || role !in listOf("caller", "receiver") || CaptureState.current.active) {
@@ -72,13 +78,23 @@ class CallService : Service() {
             try {
                 check(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                 check(notifications.areNotificationsEnabled())
-                val notification = sessionNotification("Подключение к комнате…")
-                // Declare microphone access while the app is visible, before it can move to the background.
-                if (Build.VERSION.SDK_INT >= 29) startForeground(SESSION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-                else startForeground(SESSION_ID, notification)
-                started = true
-                if (role == "caller") PushCalls.disable(this)
-                engine.connect(room, role, intent.getStringExtra("resume_call"))
+                if (!started) {
+                    val notification = sessionNotification("Подключаем адрес…")
+                    // Declare microphone access while the app is visible, before it can move to the background.
+                    if (Build.VERSION.SDK_INT >= 29) startForeground(SESSION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+                    else startForeground(SESSION_ID, notification)
+                    started = true
+                }
+                if (role == "caller") {
+                    returnAddress = intent.getStringExtra("home_address")
+                    pendingInvite = intent.getBooleanExtra("auto_invite", false)
+                    outgoingStarted = false
+                } else {
+                    returnAddress = null
+                    pendingInvite = false
+                    outgoingStarted = false
+                }
+                switchSession(room, role, intent.getStringExtra("resume_call"))
                 update()
             } catch (_: Exception) {
                 engine.disconnect("Не удалось включить фоновый режим. Разрешите микрофон и уведомления, затем повторите вход из приложения.")
@@ -86,9 +102,16 @@ class CallService : Service() {
             }
         } else if (started && CallNotificationState.validAction(intent?.getStringExtra(TOKEN), engine.actionToken)) {
             when (intent?.action) {
+                // Answer can also arrive via activity; handling it here makes notification
+                // CallStyle reliable when the activity is slow to resume or not in foreground.
+                ANSWER -> if (CallNotificationState.isIncoming(engine.state.role, engine.state.ringing)) {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        engine.accept()
+                    }
+                }
                 DECLINE -> if (CallNotificationState.isIncoming(engine.state.role, engine.state.ringing)) engine.end("reject")
                 HANGUP -> engine.end()
-                LEAVE -> engine.leave()
+                LEAVE -> { pendingInvite = false; returnAddress = null; outgoingStarted = false; engine.leave() }
             }
         } else if (!started) stopSelf()
         // A killed process must not silently resurrect consent or pretend to restore a dead WebRTC call.
@@ -96,8 +119,23 @@ class CallService : Service() {
     }
 
     private fun update() {
-        if (!started || stopping) return
+        if (!started || stopping || switching) return
         val state = engine.state
+        if (state.connected && state.role == "caller" && pendingInvite && state.peer && !state.busy) {
+            pendingInvite = false
+            outgoingStarted = true
+            engine.invite()
+            return
+        }
+        if (state.role == "caller" && outgoingStarted && !state.busy && state.connected) {
+            val address = returnAddress
+            outgoingStarted = false
+            returnAddress = null
+            if (address != null) {
+                switchSession(address, "receiver", null)
+                return
+            }
+        }
         if (!CallNotificationState.shouldRun(state.connected, state.connecting, state.busy)) {
             stopping = true
             notifications.cancel(INCOMING_ID)
@@ -123,6 +161,17 @@ class CallService : Service() {
         }
     }
 
+    private fun switchSession(room: String, role: String, resumeCall: String?) {
+        if ((engine.state.connected || engine.state.connecting) && engine.state.room == room && engine.state.role == role) return
+        switching = true
+        if (engine.state.connected || engine.state.connecting) {
+            if (engine.state.role == "receiver") engine.leave() else engine.disconnect("Переключаем адрес…")
+        }
+        if (role == "caller") PushCalls.disable(this)
+        engine.connect(room, role, resumeCall)
+        switching = false
+    }
+
     private fun postNotification(id: Int, notification: Notification) {
         // Permission can be revoked after joining. Keep the existing call alive without throwing.
         if (Build.VERSION.SDK_INT < 33 || checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
@@ -139,10 +188,19 @@ class CallService : Service() {
             .setPendingIntentCreatorBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle() else null
         return PendingIntent.getActivity(this, if (action == ANSWER) 11 else 10, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE, options)
     }
-    private fun command(action: String): PendingIntent = PendingIntent.getService(this, 12,
-        Intent(this, CallService::class.java).setAction(action)
-            .setData(Uri.parse("safetyhack://call/${engine.actionToken}/$action"))
-            .putExtra(TOKEN, engine.actionToken), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    private fun command(action: String): PendingIntent {
+        val requestCode = when (action) {
+            ANSWER -> 12
+            DECLINE -> 13
+            HANGUP -> 14
+            LEAVE -> 15
+            else -> 16
+        }
+        return PendingIntent.getService(this, requestCode,
+            Intent(this, CallService::class.java).setAction(action)
+                .setData(Uri.parse("safetyhack://call/${engine.actionToken}/$action"))
+                .putExtra(TOKEN, engine.actionToken), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
 
     private fun base(channel: String) = Notification.Builder(this, channel)
         .setSmallIcon(R.drawable.ic_call_notification)
@@ -150,20 +208,23 @@ class CallService : Service() {
         .setVisibility(Notification.VISIBILITY_PUBLIC)
         .setOngoing(true)
         .setOnlyAlertOnce(true)
-        .setColor(0xff2949ba.toInt())
+        .setColor(0xff3454d1.toInt())
 
     private fun incomingNotification(): Notification {
         val builder = base(INCOMING_CHANNEL).setContentTitle("Входящий звонок Skepticall")
             .setContentText("Собеседник ожидает ответа")
             .setCategory(Notification.CATEGORY_CALL)
             .setTimeoutAfter(70000)
+        // Answer goes to the service so accept works even when the activity is not resumed
+        // (OEM battery policies, lock screen). Decline stays on the service path too.
         if (Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), open(ANSWER)))
+            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), command(ANSWER)))
         } else {
             builder.addAction(Notification.Action.Builder(null, "Отклонить", command(DECLINE)).build())
-                .addAction(Notification.Action.Builder(null, "Ответить", open(ANSWER)).build())
+                .addAction(Notification.Action.Builder(null, "Ответить", command(ANSWER)).build())
         }
-        if (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()) builder.setFullScreenIntent(open(), true)
+        // Full-screen / tap still opens the activity so the user can see the call UI.
+        if (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()) builder.setFullScreenIntent(open(ANSWER), true)
         return builder.build().apply { flags = flags or Notification.FLAG_INSISTENT }
     }
 
@@ -175,7 +236,7 @@ class CallService : Service() {
             builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName("Собеседник Skepticall").build(), command(HANGUP)))
         } else if (engine.state.busy) {
             builder.addAction(Notification.Action.Builder(null, "Завершить", command(HANGUP)).build())
-        } else builder.addAction(Notification.Action.Builder(null, "Выйти из комнаты", command(LEAVE)).build())
+        } else builder.addAction(Notification.Action.Builder(null, "Отключить входящие", command(LEAVE)).build())
         return builder.build()
     }
 
@@ -184,7 +245,7 @@ class CallService : Service() {
         CallRuntime.remove(observer)
         notifications.cancel(INCOMING_ID)
         if (wakeLock.isHeld) wakeLock.release()
-        if (started && CallRuntime.sessionOpen) engine.disconnect("Фоновая служба остановлена. Войдите в комнату снова.")
+        if (started && CallRuntime.sessionOpen) engine.disconnect("Фоновая служба остановлена. Включите входящие снова.")
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }

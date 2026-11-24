@@ -19,7 +19,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         var connected: Boolean = false, var connecting: Boolean = false, var peer: Boolean = false,
         var busy: Boolean = false, var ringing: Boolean = false, var inCall: Boolean = false,
         var muted: Boolean = false, var speaker: Boolean = false,
-        var room: String = "", var role: String = "receiver", var status: String = "Войдите в комнату, чтобы начать",
+        var room: String = "", var role: String = "receiver", var status: String = "Настройте свой номер, чтобы начать",
         var analysis: String = "Анализ ещё не начался", var transcript: String = "",
         var risk: String = "Оценки пока нет", var riskLevel: String = "unknown"
     )
@@ -80,7 +80,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         if (!Regex("[A-Za-z0-9_-]{8,64}").matches(room) || role !in listOf("caller", "receiver")) return
         val generation = ++sessionGeneration
         pushAnswer = resumeCall
-        state.room = room; state.role = role; state.connecting = true; state.status = "Подключаемся к комнате…"
+        state.room = room; state.role = role; state.connecting = true; state.status = "Подключаем адрес…"
         signal = http.newWebSocket(request("/ws/rtc"), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { main.post {
                 if (generation != sessionGeneration) { ws.close(1000, null); return@post }
@@ -89,13 +89,13 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
                 }.toString())
             } }
             override fun onMessage(ws: WebSocket, text: String) { main.post {
-                if (generation == sessionGeneration) runCatching { handle(JSONObject(text)) }.onFailure { disconnect("Соединение отклонено. Проверьте код комнаты и свободную роль.") }
+                if (generation == sessionGeneration) runCatching { handle(JSONObject(text)) }.onFailure { disconnect("Соединение отклонено. Адрес уже используется или недоступен.") }
             } }
             override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) { main.post {
                 if (generation == sessionGeneration) disconnect("Сервер недоступен. Проверьте сеть и войдите снова.")
             } }
             override fun onClosed(ws: WebSocket, code: Int, reason: String) { main.post {
-                if (generation == sessionGeneration) disconnect("Соединение закрыто. Войдите в комнату снова.")
+                if (generation == sessionGeneration) disconnect("Соединение закрыто. Включите входящие снова.")
             } }
             override fun onClosing(ws: WebSocket, code: Int, reason: String) { ws.close(code, reason) }
         })
@@ -121,20 +121,34 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
                         if (state.connected && state.role == "receiver") registerPush(token)
                     }.addOnFailureListener {
                         if (state.connected && state.role == "receiver") {
-                            state.status = "В комнате. Push недоступен: проверьте Google Play services и сеть"
+                            state.status = "Входящие включены, но push недоступен: проверьте Google Play services и сеть"
                             notifyChange()
                         }
                     }
                 }
             }
-            "push-ready" -> { if (!state.busy) state.status = if (event.optBoolean("enabled")) "Готовы принимать звонки, в том числе через push" else "В комнате. Push ещё не настроен на сервере" }
-            "error" -> disconnect("Сервер отклонил действие. Проверьте комнату и свободную роль.")
+            "push-ready" -> { if (!state.busy) state.status = if (event.optBoolean("enabled")) "Входящие включены, в том числе через push" else "Входящие включены. Push ещё не настроен на сервере" }
+            "error" -> disconnect("Сервер отклонил действие. Адрес уже используется или недоступен.")
             "peer-joined" -> { state.peer = true; if (!state.busy) idleStatus() }
-            "peer-left" -> { state.peer = event.optBoolean("push_available"); stopCall(); state.status = if (state.peer) "Собеседник доступен через push" else "Собеседник вышел. Ожидаем подключения." }
+            "peer-left" -> { state.peer = event.optBoolean("push_available"); stopCall(); state.status = if (state.role == "receiver") "Входящие включены" else if (state.peer) "Абонент доступен через push" else "Абонент отключился" }
             "incoming" -> {
-                check(!state.ringing && callId == null)
-                if (state.role == "receiver") beginCall()
-                callId = event.getString("call_id"); state.ringing = true
+                val incomingId = event.getString("call_id")
+                // A resumed receiver can observe the same call through the live socket and FCM path.
+                // Treat that delivery as idempotent instead of dropping the whole address session.
+                if (callId == incomingId && state.ringing) return
+                if (callId != null) return
+                // Caller already called beginCall() in invite() and is busy with callId still null.
+                // Blocking on busy here dropped "incoming", so callId never bound and every later
+                // accepted/offer/answer/ice event was ignored — accept appeared to do nothing.
+                if (state.role == "receiver") {
+                    if (state.busy) return
+                    beginCall()
+                } else if (!state.busy) {
+                    // Protocol: caller only receives incoming after a local invite.
+                    return
+                }
+                callId = incomingId
+                state.ringing = true
                 // A manually reopened receiver may already have a push notification.
                 // The connected call service now owns ringing; suppress late duplicates.
                 if (state.role == "receiver") PushCalls.cancel(appContext, callId!!)
@@ -164,7 +178,10 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         }
         notifyChange()
     }
-    private fun idleStatus() { state.status = if (state.peer) "Собеседник в комнате" else "Ожидаем собеседника" }
+    private fun idleStatus() {
+        state.status = if (state.role == "receiver") "Входящие включены"
+        else if (state.peer) "Адрес найден" else "Адрес пока недоступен"
+    }
     private fun beginCall() {
         callGeneration++; state.busy = true; state.muted = false
         state.transcript = ""; state.risk = "Оценки пока нет"; state.riskLevel = "unknown"
@@ -181,14 +198,14 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
     fun invite() {
         if (!state.connected || !state.peer || state.busy) return
         runCatching { beginCall(); microphone(); send(json("invite")); state.status = "Отправляем вызов…"
-            callTimer = timer(15000) { disconnect("Сервер не подтвердил вызов. Войдите снова.") }
+            callTimer = timer(15000) { failCall("Сервер не подтвердил вызов. Попробуйте позвонить снова.") }
         }.onFailure { stopCall(); state.status = "Микрофон недоступен. Проверьте разрешение." }
         notifyChange()
     }
     fun accept() {
         if (!state.ringing || state.role != "receiver") return
         runCatching { microphone(); callSend("accept"); state.ringing = false; state.status = "Подключаем разговор…" }
-            .onFailure { disconnect("Не удалось принять звонок. Проверьте микрофон и войдите снова.") }
+            .onFailure { failCall("Не удалось принять звонок. Проверьте микрофон и попробуйте снова.") }
         notifyChange()
     }
     fun acceptExpected(expected: String) { if (callId == expected) accept() }
@@ -202,8 +219,8 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
                 if (!active()) return@post
                 when (s) {
                     PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> { cancel(callTimer); state.status = "Разговор идёт"; notifyChange() }
-                    PeerConnection.IceConnectionState.FAILED -> disconnect("Аудиосвязь не установлена. Проверьте сеть и настройки TURN сервера.")
-                    PeerConnection.IceConnectionState.DISCONNECTED -> { state.status = "Связь прервалась. Восстанавливаем…"; cancel(callTimer); callTimer = timer(10000) { if (active()) disconnect("Аудиосвязь потеряна. Войдите снова.") }; notifyChange() }
+                    PeerConnection.IceConnectionState.FAILED -> failCall("Аудиосвязь не установлена. Проверьте сеть и попробуйте снова.")
+                    PeerConnection.IceConnectionState.DISCONNECTED -> { state.status = "Связь прервалась. Восстанавливаем…"; cancel(callTimer); callTimer = timer(10000) { if (active()) failCall("Аудиосвязь потеряна. Можно позвонить снова.") }; notifyChange() }
                     else -> Unit
                 }
             } }
@@ -230,18 +247,18 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
             }
         }) ?: error("WebRTC initialization failed")
         pc!!.addTrack(track!!, listOf("voice"))
-        cancel(callTimer); callTimer = timer(30000) { if (active()) disconnect("Время подключения истекло. Проверьте сеть и настройки TURN.") }
+        cancel(callTimer); callTimer = timer(30000) { if (active()) failCall("Время подключения истекло. Проверьте сеть и попробуйте снова.") }
     }
     private fun sendIce(c: IceCandidate) {
         runCatching { callSend("ice") { it.put("candidate", JSONObject().put("candidate", c.sdp).put("sdpMid", c.sdpMid).put("sdpMLineIndex", c.sdpMLineIndex)) } }
-            .onFailure { disconnect("Сигнальная связь потеряна. Войдите снова.") }
+            .onFailure { failCall("Не удалось передать параметры связи. Можно позвонить снова.") }
     }
     private fun observer(success: (SessionDescription?) -> Unit) = object : SdpObserver {
         private val generation = callGeneration
         private fun dispatch(action: () -> Unit) { main.post { if (generation == callGeneration && state.busy) action() } }
         override fun onCreateSuccess(sdp: SessionDescription) = dispatch { success(sdp) }
         override fun onSetSuccess() = dispatch { success(null) }
-        override fun onCreateFailure(message: String) = dispatch { disconnect("Не удалось согласовать аудиосвязь. Войдите снова.") }
+        override fun onCreateFailure(message: String) = dispatch { failCall("Не удалось согласовать аудиосвязь. Можно позвонить снова.") }
         override fun onSetFailure(message: String) = onCreateFailure(message)
     }
     private fun createDescription(offer: Boolean) {
@@ -249,7 +266,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
             val sdp = description ?: return@observer
             pc?.setLocalDescription(observer {
                 runCatching { callSend(if (offer) "offer" else "answer") { it.put("sdp", sdp.description) }; localDescriptionSent = true; localIce.toList().forEach(::sendIce); localIce.clear() }
-                    .onFailure { disconnect("Не удалось передать параметры звонка.") }
+                    .onFailure { failCall("Не удалось передать параметры звонка. Можно позвонить снова.") }
             }, sdp)
         }
         if (offer) pc?.createOffer(callback, MediaConstraints()) else pc?.createAnswer(callback, MediaConstraints())
@@ -331,9 +348,8 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
     }
     fun end(type: String = "hangup") {
         if (!state.busy) return
-        // Closing signaling also ends any invite still in flight; it cannot race the next call.
-        if (callId == null) { disconnect("Вызов отменён. Войдите снова."); return }
-        runCatching { callSend(type) }.onFailure { disconnect("Связь потеряна. Разговор завершён."); return }
+        if (callId == null) { failCall("Вызов отменён. Можно позвонить снова."); return }
+        runCatching { callSend(type) }.onFailure { failCall("Связь потеряна. Разговор завершён."); return }
         stopCall(); state.status = "Разговор завершён"; notifyChange()
         // Server handles ordered hangup before any subsequent invite on this WebSocket.
     }
@@ -351,6 +367,11 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         callId = null; localDescriptionSent = false; pendingIce.clear(); localIce.clear()
         state.busy = false; state.ringing = false; state.inCall = false; state.muted = false
     }
+    private fun failCall(message: String) {
+        stopCall()
+        state.status = message
+        notifyChange()
+    }
     fun disconnect(message: String) {
         pushAnswer = null
         sessionGeneration++; cancel(signalTimer); stopCall()
@@ -367,7 +388,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
             runCatching { send(json("push-unregister")) }
         }
         PushCalls.disable(appContext)
-        disconnect("Вы вышли из комнаты")
+        disconnect(if (state.role == "receiver") "Входящие отключены" else "Вызов отменён")
     }
     fun release() {
         if (released) return
