@@ -317,7 +317,20 @@
           li.textContent = reason.slice(0, 2000);
           ui.reasons.append(li);
         }
-      } else if (data.type === 'error' || data.type === 'done') {
+      } else if (data.type === 'done') {
+        // Normal end of the analysis stream (call ended or client stop) is not a failure.
+        clearTimer(c.audioTimer);
+        clearTimer(c.audioDeadlineTimer);
+        clearTimer(c.audioRetryTimer);
+        c.audio = null;
+        socket.onopen = socket.onmessage = socket.onerror = socket.onclose = null;
+        closeSocket(socket);
+        if (!c.analysisFailed) {
+          analysisState(c.text.length
+            ? 'Анализ завершён. Разговор можно продолжать без распознавания.'
+            : 'Анализ завершён. Речь собеседника не была распознана.');
+        }
+      } else if (data.type === 'error') {
         const errors = {
           quota_exceeded: 'Лимит Google Gemini исчерпан. Попросите организатора проверить квоту.',
           model_unavailable: 'Модель Gemini Live недоступна. Попросите организатора проверить настройки модели.',
@@ -325,14 +338,22 @@
           session_expired: 'Сеанс Gemini Live истёк. Для нового анализа начните новый звонок.',
           upstream_closed: 'Связь с Google Gemini потеряна. Для нового анализа начните новый звонок.',
           processing_timeout: 'Google Gemini не завершил обработку вовремя. Для нового анализа начните новый звонок.',
-          upstream_error: 'Ошибка Google Gemini. Для нового анализа начните новый звонок.'
+          upstream_error: 'Ошибка Google Gemini. Для нового анализа начните новый звонок.',
+          busy: 'Сервер анализа занят другой сессией.'
         };
-        const detail = data.type === 'error' && Object.hasOwn(errors, data.code) ? errors[data.code] : 'Распознавание остановлено сервером.';
+        const detail = Object.hasOwn(errors, data.code) ? errors[data.code] : 'Распознавание остановлено сервером.';
         analysisFailure(c, `${detail} Разговор продолжается; анализ неполный.`);
       }
     };
     socket.onerror = () => { if (c.audio === socket) analysisFailure(c, 'Канал анализа недоступен. Разговор продолжается.'); };
-    socket.onclose = () => { if (c.audio === socket) analysisFailure(c, 'Связь с анализом потеряна. Разговор продолжается.'); };
+    // Do not treat a clean server close after done/error as a separate failure.
+    socket.onclose = () => {
+      if (c.audio !== socket) return;
+      c.audio = null;
+      if (!c.analysisFailed && c.audioReady) {
+        analysisFailure(c, 'Связь с анализом потеряна. Разговор продолжается.');
+      }
+    };
   }
 
   async function signal(s, data) {
