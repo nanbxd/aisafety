@@ -58,7 +58,7 @@ object PushCalls {
         if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         val nm = manager(c)
         if (!nm.areNotificationsEnabled()) return
-        nm.createNotificationChannel(NotificationChannel(CallService.INCOMING_CHANNEL, "Входящие звонки", NotificationManager.IMPORTANCE_HIGH).apply {
+        nm.createNotificationChannel(NotificationChannel(CallService.INCOMING_CHANNEL, LocaleHelper.wrap(c).getString(R.string.notif_channel_incoming), NotificationManager.IMPORTANCE_HIGH).apply {
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).build())
             enableVibration(true); lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         })
@@ -75,14 +75,14 @@ object PushCalls {
             .setData(Uri.parse("safetyhack://push/$call/reject")).putExtra("room", room).putExtra("call_id", call),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val builder = Notification.Builder(c, CallService.INCOMING_CHANNEL)
-            .setSmallIcon(R.drawable.ic_call_notification).setContentTitle("Входящий звонок Skepticall")
-            .setContentText("Собеседник ожидает ответа").setContentIntent(activity(OPEN))
+            .setSmallIcon(R.drawable.ic_call_notification).setContentTitle(LocaleHelper.wrap(c).getString(R.string.notif_incoming_title))
+            .setContentText(LocaleHelper.wrap(c).getString(R.string.notif_incoming_text)).setContentIntent(activity(OPEN))
             .setCategory(Notification.CATEGORY_CALL).setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOngoing(true).setOnlyAlertOnce(true).setTimeoutAfter((expires - System.currentTimeMillis()).coerceIn(1, 60000))
         if (Build.VERSION.SDK_INT >= 31) builder.setStyle(Notification.CallStyle.forIncomingCall(
-            Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), reject, activity(ANSWER)))
-        else builder.addAction(Notification.Action.Builder(null, "Отклонить", reject).build())
-            .addAction(Notification.Action.Builder(null, "Ответить", activity(ANSWER)).build())
+            Person.Builder().setName(LocaleHelper.wrap(c).getString(R.string.notif_peer_name)).setImportant(true).build(), reject, activity(ANSWER)))
+        else builder.addAction(Notification.Action.Builder(null, LocaleHelper.wrap(c).getString(R.string.decline), reject).build())
+            .addAction(Notification.Action.Builder(null, LocaleHelper.wrap(c).getString(R.string.answer), activity(ANSWER)).build())
         // Cold-start incoming uses CallStyle on the lock screen. Only an explicit
         // notification tap opens the activity; never reveal a previous transcript.
         prefs(c).edit().putString("call", call).putLong("expires", expires).apply()

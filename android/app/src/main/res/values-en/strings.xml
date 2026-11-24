@@ -133,7 +133,7 @@
     <string name="mic_delete">Delete recording</string>
     <string name="mic_status_ready">You can start a 30-second recording</string>
     <string name="mic_status_local_only">Recording only on the phone</string>
-    <string name="mic_level">Level: %.1f dBFS · %d of 30 seconds</string>
+    <string name="mic_level">Level: %1$.1f dBFS · %2$d of 30 seconds</string>
     <string name="mic_silence_hint">Silence: microphone may be blocked</string>
     <string name="mic_no_transcript">No recognized speech yet</string>
     <string name="mic_no_risk">No assessment yet</string>

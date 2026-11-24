@@ -14,6 +14,8 @@ import android.os.PowerManager
 
 /** Started from a visible, permission-granted activity; survives Home, Back and task removal. */
 class CallService : Service() {
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(LocaleHelper.wrap(base)) }
+
     companion object {
         const val JOIN = "kz.safetyhack.JOIN"
         const val ANSWER = "kz.safetyhack.ANSWER"
@@ -52,11 +54,11 @@ class CallService : Service() {
         super.onCreate()
         engine = CallRuntime.client(this)
         notifications = getSystemService(NotificationManager::class.java)
-        notifications.createNotificationChannel(NotificationChannel(SESSION_CHANNEL, "Разговор и ожидание звонков", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "Показывает, что приложение подключено и доступно для звонка"
+        notifications.createNotificationChannel(NotificationChannel(SESSION_CHANNEL, getString(R.string.localized_message_86), NotificationManager.IMPORTANCE_LOW).apply {
+            description = getString(R.string.localized_message_87)
             setSound(null, null)
         })
-        notifications.createNotificationChannel(NotificationChannel(INCOMING_CHANNEL, "Входящие звонки", NotificationManager.IMPORTANCE_HIGH).apply {
+        notifications.createNotificationChannel(NotificationChannel(INCOMING_CHANNEL, getString(R.string.notif_channel_incoming), NotificationManager.IMPORTANCE_HIGH).apply {
             description = getString(R.string.notif_channel_incoming_desc)
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
@@ -157,7 +159,7 @@ class CallService : Service() {
         val summary = "${engine.actionToken}:${state.status}:${state.inCall}:${state.busy}"
         if (lastSummary != summary) {
             lastSummary = summary
-            postNotification(SESSION_ID, sessionNotification(state.status))
+            postNotification(SESSION_ID, sessionNotification(UiText.translate(this, state.status)))
         }
     }
 
@@ -236,7 +238,7 @@ class CallService : Service() {
             builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName(getString(R.string.notif_peer_name)).build(), command(HANGUP)))
         } else if (engine.state.busy) {
             builder.addAction(Notification.Action.Builder(null, getString(R.string.notif_hangup), command(HANGUP)).build())
-        } else builder.addAction(Notification.Action.Builder(null, "Отключить входящие", command(LEAVE)).build())
+        } else builder.addAction(Notification.Action.Builder(null, getString(R.string.disable_incoming), command(LEAVE)).build())
         return builder.build()
     }
 
@@ -245,7 +247,7 @@ class CallService : Service() {
         CallRuntime.remove(observer)
         notifications.cancel(INCOMING_ID)
         if (wakeLock.isHeld) wakeLock.release()
-        if (started && CallRuntime.sessionOpen) engine.disconnect("Фоновая служба остановлена. Включите входящие снова.")
+        if (started && CallRuntime.sessionOpen) engine.disconnect(getString(R.string.localized_message_89))
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }

@@ -141,7 +141,7 @@
     <string name="mic_delete">Удалить запись</string>
     <string name="mic_status_ready">Можно начать запись на 30 секунд</string>
     <string name="mic_status_local_only">Запись только на телефоне</string>
-    <string name="mic_level">Уровень: %.1f дБFS · %d из 30 секунд</string>
+    <string name="mic_level">Уровень: %1$.1f дБFS · %2$d из 30 секунд</string>
     <string name="mic_silence_hint">Тишина: возможна блокировка микрофона</string>
     <string name="mic_no_transcript">Пока нет распознанной речи</string>
     <string name="mic_no_risk">Оценка ещё не получена</string>

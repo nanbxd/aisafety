@@ -9,6 +9,8 @@ import java.io.File
 import kotlin.math.*
 
 class CaptureService : Service() {
+    override fun attachBaseContext(base: android.content.Context) { super.attachBaseContext(LocaleHelper.wrap(base)) }
+
     @Volatile private var running = false
     private var worker: Thread? = null
     override fun onBind(intent: Intent?) = null

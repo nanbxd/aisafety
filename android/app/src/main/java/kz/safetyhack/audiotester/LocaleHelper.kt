@@ -58,6 +58,9 @@ object LocaleHelper {
     private fun updateResources(context: Context, locale: Locale): Context {
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)
+        val theme = context.getSharedPreferences("appearance", Context.MODE_PRIVATE).getInt("theme", 0)
+        if (theme != 0) config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+            (if (theme == 2) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO)
         if (Build.VERSION.SDK_INT >= 24) {
             config.setLocales(LocaleList(locale))
         } else {
