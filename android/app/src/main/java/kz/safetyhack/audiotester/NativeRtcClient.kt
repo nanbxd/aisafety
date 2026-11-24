@@ -2,6 +2,8 @@
 
 import android.content.Context
 import android.media.AudioManager
+import android.media.AudioDeviceInfo
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import okhttp3.*
@@ -31,6 +33,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
     private var oldMode = AudioManager.MODE_NORMAL
     private var oldSpeaker = false
     private var audioOwned = false
+    private var routeListener: AudioManager.OnCommunicationDeviceChangedListener? = null
     private val adm: JavaAudioDeviceModule
     private val factory: PeerConnectionFactory
     private var signal: WebSocket? = null
@@ -192,7 +195,18 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         if (track != null) return
         oldMode = audioManager.mode; oldSpeaker = audioManager.isSpeakerphoneOn; audioOwned = true
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        audioManager.isSpeakerphoneOn = false; state.speaker = false
+        if (Build.VERSION.SDK_INT >= 31) {
+            routeListener = AudioManager.OnCommunicationDeviceChangedListener { device ->
+                if (audioOwned) {
+                    state.speaker = device?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    notifyChange()
+                }
+            }.also { audioManager.addOnCommunicationDeviceChangedListener(appContext.mainExecutor, it) }
+            audioManager.clearCommunicationDevice()
+            state.speaker = audioManager.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+        } else {
+            audioManager.isSpeakerphoneOn = false; state.speaker = audioManager.isSpeakerphoneOn
+        }
         source = factory.createAudioSource(MediaConstraints())
         track = factory.createAudioTrack("microphone", source).apply { setEnabled(true) }
     }
@@ -460,7 +474,26 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         // Server handles ordered hangup before any subsequent invite on this WebSocket.
     }
     fun toggleMute() { if (state.inCall) { state.muted = !state.muted; track?.setEnabled(!state.muted); notifyChange() } }
-    fun toggleSpeaker() { if (state.inCall) { state.speaker = !state.speaker; audioManager.isSpeakerphoneOn = state.speaker; notifyChange() } }
+    fun toggleSpeaker(): Boolean {
+        if (!state.inCall || !audioOwned) return false
+        return runCatching {
+            if (Build.VERSION.SDK_INT >= 31) {
+                val enable = audioManager.communicationDevice?.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                val devices = audioManager.availableCommunicationDevices
+                val device = if (enable) devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                else devices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE }
+                    ?: devices.firstOrNull { it.type != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                if (device == null || !audioManager.setCommunicationDevice(device)) return false
+                // The device-change listener updates the UI once Android applies the route.
+                state.speaker = audioManager.communicationDevice?.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+            } else {
+                audioManager.isSpeakerphoneOn = !audioManager.isSpeakerphoneOn
+                state.speaker = audioManager.isSpeakerphoneOn
+            }
+            notifyChange()
+            true
+        }.getOrDefault(false)
+    }
     private fun stopCall() {
         callGeneration++; cancel(callTimer); cancel(analysisTimer)
         analysisReady = false
@@ -471,7 +504,16 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         remoteSink?.let { remoteTrack?.removeSink(it) }; remoteSink = null; remoteTrack = null
         pc?.close(); pc?.dispose(); pc = null
         track?.dispose(); track = null; source?.dispose(); source = null
-        if (audioOwned) { audioManager.isSpeakerphoneOn = oldSpeaker; audioManager.mode = oldMode; audioOwned = false }
+        if (audioOwned) {
+            audioOwned = false
+            if (Build.VERSION.SDK_INT >= 31) {
+                routeListener?.let { audioManager.removeOnCommunicationDeviceChangedListener(it) }
+                routeListener = null
+                audioManager.clearCommunicationDevice()
+            } else audioManager.isSpeakerphoneOn = oldSpeaker
+            audioManager.mode = oldMode
+        }
+        state.speaker = false
         if (state.inCall && state.role == "receiver") state.analysis = "Разговор завершён. Последние фразы могли не попасть в анализ."
         callId = null; localDescriptionSent = false; pendingIce.clear(); localIce.clear()
         state.busy = false; state.ringing = false; state.inCall = false; state.muted = false

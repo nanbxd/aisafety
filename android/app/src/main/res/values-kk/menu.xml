@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="speaker_switch_failed">Дыбыс шығару құрылғысын ауыстыру мүмкін болмады. Қайталап көріңіз.</string>
+  <string name="home_call_status_hint">Қоңырау күйі осы жерде көрсетіледі</string>
+  <string name="menu_title">Мәзір</string>
+  <string name="menu_subtitle">Қажеттінің бәрі қол астында</string>
+  <string name="menu_settings">Баптаулар</string>
+  <string name="menu_settings_hint">Менің нөмірім және микрофон</string>
+  <string name="appearance_title">Безендіру тақырыбы</string>
+  <string-array name="appearance_options">
+    <item>Жүйедегідей</item>
+    <item>Ашық</item>
+    <item>Қараңғы</item>
+  </string-array>
+  <string name="back">Артқа</string>
+  <string name="delete_digit">Цифрды өшіру</string>
+  <string name="server_audio">Сервердегі дыбыс</string>
+</resources>

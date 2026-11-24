@@ -62,41 +62,41 @@ class MainActivity : Activity() {
             background = android.graphics.drawable.GradientDrawable().apply { setColor(0xffd3e3fd.toInt()); cornerRadius = dp(28).toFloat() }
             body.addView(this, LinearLayout.LayoutParams(-1, -2)); setOnClickListener { action() }
         }
-        label("Проверка микрофона", 28f)
-        label("Запишите до 30 секунд и прослушайте запись: слышны ли оба собеседника? Во время телефонного звонка Android или Vivo может блокировать запись звука.")
-        status = label("Всё готово", 20f).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        label(getString(R.string.mic_test_title), 28f)
+        label(getString(R.string.localized_message_21))
+        status = label(getString(R.string.localized_message_1), 20f).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         meter = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 90; contentDescription = "Уровень звука микрофона"; body.addView(this, LinearLayout.LayoutParams(-1, dp(16)))
+            max = 90; contentDescription = getString(R.string.localized_message_2); body.addView(this, LinearLayout.LayoutParams(-1, dp(16)))
         }
-        meterText = label("Уровень: −90 дБFS · 0 из 30 секунд")
-        label("Режим микрофона")
+        meterText = label(getString(R.string.mic_level, -90.0, 0))
+        label(getString(R.string.localized_message_3))
         source = Spinner(this).apply {
             adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item,
-                listOf("Обычный микрофон", "Для распознавания речи", "Для голосовой связи"))
+                listOf(getString(R.string.localized_message_4), getString(R.string.localized_message_5), getString(R.string.localized_message_6)))
             minimumHeight = dp(48); body.addView(this)
         }
-        start = button("Начать запись на 30 секунд") { startRequested() }
-        stop = button("Остановить запись") {
+        start = button(getString(R.string.localized_message_7)) { startRequested() }
+        stop = button(getString(R.string.localized_message_8)) {
             if (CaptureState.current.active) startService(Intent(this, CaptureService::class.java).setAction("STOP"))
         }
         replay = button(getString(R.string.mic_replay)) { play() }
-        delete = button("Удалить запись") { deleteRecording() }
-        label("Передача на сервер — по желанию", 20f)
-        label("Без передачи запись остаётся на телефоне. Включайте передачу только с согласия всех участников. Используйте защищённое соединение wss://.")
-        label("Адрес сервера")
+        delete = button(getString(R.string.mic_delete)) { deleteRecording() }
+        label(getString(R.string.localized_message_10), 20f)
+        label(getString(R.string.localized_message_22))
+        label(getString(R.string.localized_message_11))
         endpoint = EditText(this).apply {
             setSingleLine(); inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             setText(getPreferences(0).getString("endpoint", "wss://your-server.example/ws/audio"))
             body.addView(this)
         }
         consent = CheckBox(this).apply {
-            text = "Я согласен передать звук этой записи на указанный сервер"
+            text = getString(R.string.localized_message_12)
             textSize = 18f
             isSaveEnabled = false; minHeight = dp(48); body.addView(this)
         }
-        network = label("Запись только на телефоне")
-        label("Результаты проверки", 20f)
-        results = label("Здесь появятся распознанная речь и оценка риска.").apply { setTextIsSelectable(true) }
+        network = label(getString(R.string.mic_status_local_only))
+        label(getString(R.string.localized_message_13), 20f)
+        results = label(getString(R.string.localized_message_14)).apply { setTextIsSelectable(true) }
         setContentView(ScrollView(this).apply { isFillViewport = true; addView(body) })
         if (!CaptureState.current.active && CaptureState.current.wav == null) {
             val previous = File(filesDir, "latest-test.wav")
@@ -110,7 +110,7 @@ class MainActivity : Activity() {
 
     private fun startRequested() {
         if (RtcActivity.audioSessionOpen) {
-            Toast.makeText(this, "Сначала завершите звонок в приложении", Toast.LENGTH_LONG).show(); return
+            Toast.makeText(this, getString(R.string.localized_message_15), Toast.LENGTH_LONG).show(); return
         }
         if (CaptureState.current.active || starting) return
         if (consent.isChecked) {
@@ -119,7 +119,7 @@ class MainActivity : Activity() {
                 uri.scheme == "wss" && !uri.host.isNullOrBlank() && uri.userInfo == null && uri.fragment == null
             }.getOrDefault(false)
             if (!valid) {
-                Toast.makeText(this, "Проверьте адрес сервера: нужен корректный wss:// адрес", Toast.LENGTH_LONG).show(); return
+                Toast.makeText(this, getString(R.string.localized_message_16), Toast.LENGTH_LONG).show(); return
             }
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -137,7 +137,7 @@ class MainActivity : Activity() {
         try { startForegroundService(intent) }
         catch (_: Exception) {
             starting = false
-            CaptureState.update { it.copy(status = "Не удалось начать запись. Откройте приложение и попробуйте снова.") }
+            CaptureState.update { it.copy(status = getString(R.string.localized_message_17)) }
         }
         render()
     }
@@ -147,7 +147,7 @@ class MainActivity : Activity() {
         if (requestCode == 10 && pendingPermissionStart) {
             pendingPermissionStart = false
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) startRequested()
-            else CaptureState.update { it.copy(status = "Нет доступа к микрофону. Разрешите его в настройках приложения и попробуйте снова.") }
+            else CaptureState.update { it.copy(status = getString(R.string.localized_message_18)) }
         }
     }
 
@@ -158,10 +158,10 @@ class MainActivity : Activity() {
             player = MediaPlayer().apply {
                 setDataSource(path)
                 setOnCompletionListener { releasePlayer(); render() }
-                setOnErrorListener { _, _, _ -> releasePlayer(); Toast.makeText(this@MainActivity, "Не удалось воспроизвести запись", Toast.LENGTH_LONG).show(); true }
+                setOnErrorListener { _, _, _ -> releasePlayer(); Toast.makeText(this@MainActivity, getString(R.string.localized_message_19), Toast.LENGTH_LONG).show(); true }
                 prepare(); start()
             }
-        } catch (_: Exception) { releasePlayer(); Toast.makeText(this, "Не удалось открыть запись", Toast.LENGTH_LONG).show() }
+        } catch (_: Exception) { releasePlayer(); Toast.makeText(this, getString(R.string.localized_message_20), Toast.LENGTH_LONG).show() }
         render()
     }
     private fun deleteRecording() {
@@ -186,17 +186,17 @@ class MainActivity : Activity() {
         delete.isEnabled = !busy && (state.wav != null || File(filesDir, "latest-test.wav").exists())
         replay.text = if (player != null) getString(R.string.mic_stop_replay) else getString(R.string.mic_replay)
         source.isEnabled = !busy; endpoint.isEnabled = !busy; consent.isEnabled = !busy
-        status.text = if (starting) getString(R.string.mic_preparing) else state.status
+        status.text = if (starting) getString(R.string.mic_preparing) else UiText.translate(this, state.status)
         meter.progress = (state.db + 90).toInt().coerceIn(0, 90)
         meterText.text = String.format(Locale.forLanguageTag("ru-RU"), getString(R.string.mic_level), state.db, state.seconds)
         if (state.active && state.db < -55) {
             meterText.append("\n" + getString(R.string.mic_silence_hint))
         }
-        network.text = listOf(state.network, state.serverMode).filter { it.isNotBlank() }.joinToString("\n")
+        network.text = listOf(state.network, state.serverMode).map { UiText.translate(this, it) }.filter { it.isNotBlank() }.joinToString("\n")
         val noTranscript = if (state.diagnostic) getString(R.string.mic_diagnostic_no_speech) else getString(R.string.mic_no_transcript)
         val noRisk = if (state.diagnostic) getString(R.string.mic_diagnostic_no_risk) else getString(R.string.mic_no_risk)
-        results.text = listOf("Речь: ${state.transcript.ifBlank { noTranscript }}",
-            "Риск: ${state.risk.ifBlank { noRisk }}", "Звук на сервере: ${state.serverLevel.ifBlank { getString(R.string.mic_no_server_data) }}").joinToString("\n\n")
+        results.text = listOf(getString(R.string.speech_label) + ": " + state.transcript.ifBlank { noTranscript },
+            getString(R.string.risk_label) + ": " + UiText.translate(this, state.risk.ifBlank { noRisk }), getString(R.string.server_audio) + ": " + state.serverLevel.ifBlank { getString(R.string.mic_no_server_data) }).joinToString("\n\n")
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); releasePlayer(); super.onPause() }

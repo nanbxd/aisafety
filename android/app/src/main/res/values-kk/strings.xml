@@ -31,7 +31,7 @@
     <string name="tab_calls">Қоңыраулар</string>
     <string name="tab_analysis">Талдау</string>
     <string name="help">Көмек</string>
-    <string name="address_not_set">Бапталмаған — «Менің нөмірім» басыңыз</string>
+    <string name="address_not_set">Нөмір көрсетілмеген — «Менің нөмірім» түймесін басыңыз</string>
 
     <string name="scene_high_title">Алаяқтық болуы мүмкін</string>
     <string name="scene_medium_title">Сұранысты тексерген жөн</string>
@@ -67,8 +67,8 @@
     <string name="incoming_settings_msg">Хабарландыруларға, дыбысқа және құлыптау экранында көрсетуге рұқсат беріңіз. Үнсіз режимде және «Мазаламау» режимінде қоңырау телефон баптауларына бағынады.\n\nҚосымшаны мәжбүрлеп тоқтатқаннан кейін оны ашып, кіріс қоңырауларды қайта қосу керек.</string>
     <string name="notifications">Хабарландырулар</string>
     <string name="close">Жабу</string>
-    <string name="over_lockscreen">Құлыптау үстінен</string>
-    <string name="call_already_ended">Қоңырау қазірдің өзінде аяқталды</string>
+    <string name="over_lockscreen">Құлыптау экранында көрсету</string>
+    <string name="call_already_ended">Қоңырау аяқталып қойған</string>
     <string name="accept_failed">Қоңырауды қабылдау мүмкін болмады. Қайта кіріңіз.</string>
     <string name="incoming_call_title">Skepticall кіріс қоңырауы</string>
     <string name="answer_peer">Сөйлесушіге жауап беру?</string>
@@ -78,7 +78,7 @@
     <string name="your_number_msg">Нөмір тек қосымша ішіндегі мекенжай ретінде қолданылады. SMS растау және қарапайым телефон қоңырауы жоқ.</string>
     <string name="save">Сақтау</string>
     <string name="cancel">Болдырмау</string>
-    <string name="invalid_number">10-нан 15-ке дейінгі цифрлы нөмір енгізіңіз</string>
+    <string name="invalid_number">10–15 цифрдан тұратын нөмірді енгізіңіз</string>
     <string name="address_saved">Мекенжай сақталды. Кіріс қоңырауларды қосыңыз.</string>
     <string name="help_title">Үш қадамдық қоңырау</string>
     <string name="help_msg">Баптауларда нөміріңізді көрсетіп, кіріс қоңырауларды қосыңыз.\n\nSkepticall пайдаланушысының нөмірін енгізіп, «Қоңырау шалу» басыңыз. Алушы кіріс қоңырауды көріп, жауап бере алады.\n\n«Талдау» қойындысында алушы сөз бен ескертулерді көреді. Бұл көмек, қауіпсіздік кепілдігі емес.</string>
@@ -133,7 +133,7 @@
     <string name="mic_delete">Жазуды жою</string>
     <string name="mic_status_ready">30 секундтық жазуды бастауға болады</string>
     <string name="mic_status_local_only">Жазу тек телефонда</string>
-    <string name="mic_level">Деңгей: %.1f дБFS · 30 секундтың %d</string>
+    <string name="mic_level">Деңгей: %1$.1f дБFS · 30 секундтың %2$d</string>
     <string name="mic_silence_hint">Тыныштық: микрофон бұғатталған болуы мүмкін</string>
     <string name="mic_no_transcript">Танылған сөз әлі жоқ</string>
     <string name="mic_no_risk">Бағалау әлі алынған жоқ</string>
@@ -145,7 +145,7 @@
     <string name="mic_preparing">Жазуға дайындалуда…</string>
     <string name="mic_enabling">Микрофонды қосудамыз…</string>
     <string name="mic_enable_failed">Микрофонды қосу мүмкін болмады. Рұқсат беріп, ашық қосымшада қайталап көріңіз.</string>
-    <string name="mic_format_unsupported">16 кГц, моно жазу пішімі қолдау көрсетілмейді</string>
+    <string name="mic_format_unsupported">16 кГц моно жазу пішіміне қолдау көрсетілмейді</string>
     <string name="mic_prepare_failed">Микрофонды дайындау мүмкін болмады</string>
     <string name="mic_not_started">Микрофон қосылмады</string>
 

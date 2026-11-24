@@ -1,0 +1,18 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="speaker_switch_failed">Не удалось переключить динамик. Попробуйте ещё раз.</string>
+  <string name="home_call_status_hint">Здесь будет отображаться статус звонка</string>
+  <string name="menu_title">Меню</string>
+  <string name="menu_subtitle">Всё нужное — под рукой</string>
+  <string name="menu_settings">Настройки</string>
+  <string name="menu_settings_hint">Мой номер и микрофон</string>
+  <string name="appearance_title">Тема оформления</string>
+  <string-array name="appearance_options">
+    <item>Как в системе</item>
+    <item>Светлая</item>
+    <item>Тёмная</item>
+  </string-array>
+  <string name="back">Назад</string>
+  <string name="delete_digit">Удалить цифру</string>
+  <string name="server_audio">Звук на сервере</string>
+</resources>
