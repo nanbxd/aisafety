@@ -154,7 +154,7 @@ test('joined UI hides setup, identifies address and role, focuses heading and re
   assert.equal(h.elements.setup.hidden, true);
   assert.equal(h.elements['joined-summary'].hidden, false);
   assert.ok(h.elements['joined-summary'].textContent.includes(h.elements.room.value));
-  assert.match(h.elements['joined-summary'].textContent, /принимаю звонок/);
+  assert.match(h.elements['joined-summary'].textContent, /принимаю звонки/);
   assert.equal(h.elements['call-title'].focused, true);
   assert.equal(h.elements['joined-summary'].textContent.includes('test-only-placeholder'), false);
   await h.click('disconnect');

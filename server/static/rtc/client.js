@@ -21,7 +21,17 @@
     return digits.length >= 10 && digits.length <= 15 ? { display: `+${digits}`, key: `tel_${digits}` } : null;
   }
 
+  function scene() {
+    window.SkepticallScene?.update({
+      joined: Boolean(session && session.ready), busy: Boolean(call),
+      ringing: Boolean(call && call.phase !== 'accepted'),
+      level: ui.risk.getAttribute('data-level'), unavailable: Boolean(call && call.analysisFailed),
+      receiver: Boolean(session && session.role === 'receiver')
+    });
+  }
+
   function controls() {
+    scene();
     const joined = Boolean(session && session.ready);
     const busy = Boolean(call);
     for (const field of ['role', 'room', 'consent']) ui[field].disabled = Boolean(session) || connecting;
@@ -38,6 +48,8 @@
     ui.mute.disabled = !busy || !call.stream || Boolean(call.ending);
     ui.mute.setAttribute('aria-pressed', String(Boolean(call && call.muted)));
     ui.mute.textContent = call && call.muted ? 'Включить микрофон' : 'Выключить микрофон';
+    ui.mute.setAttribute('aria-label', ui.mute.textContent);
+    ui.mute.setAttribute('title', ui.mute.textContent);
     ui.setup.hidden = joined;
     ui['joined-summary'].hidden = !joined;
     ui['joined-summary'].textContent = joined ? `Адрес: ${session.displayAddress}. Режим: ${session.role === 'caller' ? 'звоню' : 'принимаю звонки'}.` : '';
@@ -100,6 +112,7 @@
     ui.incomplete.hidden = false;
     analysisState(message);
     stopAnalysis(c);
+    scene();
   }
 
   function stopCall(message) {
@@ -310,6 +323,7 @@
         ui.risk.setAttribute('data-level', Object.hasOwn(labels, data.level) ? data.level : 'unknown');
         ui.risk.textContent = labels[data.level] || 'Оценка риска недоступна.';
         if (typeof data.message === 'string') ui.risk.textContent += ` ${data.message.slice(0, 4000)}`;
+        scene();
         ui.reasons.replaceChildren();
         if (Array.isArray(data.reasons)) for (const reason of data.reasons.slice(0, 20)) {
           if (typeof reason !== 'string') continue;

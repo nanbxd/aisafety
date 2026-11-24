@@ -79,3 +79,10 @@
 - Системное имя приложения вынесено в Android-ресурс `Skepticall`; добавлены фирменные adaptive, round и monochrome launcher icons со щитом Skepticall.
 - Версия исходников повышена до `versionCode 7`, `versionName 0.7-skepticall`. Package `kz.safetyhack.audiotester` намеренно сохранён для совместимости обновлений и Firebase.
 - Android-ресурсы и Gradle-файл прошли диагностику редактора без ошибок. Сборка APK дошла до загрузки WebRTC AAR и остановилась из-за сброса соединения Maven; снимок launcher не выполнялся.
+
+## Meet-style redesign — 2026-11-24
+
+- Web: `node --test tests/rtc_client.test.cjs tests/rtc_scene.test.cjs` — 18 passed, 0 failed. JavaScript syntax checks passed. All 9 directly referenced page resources returned HTTP 200; unique HTML IDs; no inline SVG. All 18 SVG files and the animation manifest parsed successfully.
+- Android: `assembleDebug testDebugUnitTest --no-daemon --max-workers=1` — BUILD SUCCESSFUL. 22 JVM tests, 0 failures/errors. APK inspected: 18 shared SVG files and `assets/animations/manifest.json` included. Output: `android/app/build/outputs/apk/debug/app-debug.apk`.
+- Tooling: downloaded pinned Lottie/AndroidSVG dependencies. A Windows Gradle immutable-transform directory move failed for AndroidX core; completing that cache-directory move after Gradle exited allowed the build to proceed. No dependency versions were changed to bypass verification.
+- Visual verification remains pending: browser bridge unavailable, native Chrome access approval timed out. No physical-device interaction, live two-party call, pixel comparison with Meet, or custom user Lottie playback was verified. Default Lottie slots are intentionally empty; state-specific SVG fallbacks are supplied.

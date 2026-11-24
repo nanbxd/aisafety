@@ -16,7 +16,7 @@
             <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
         </service>
         <receiver android:name=".PushRejectReceiver" android:exported="false" />
-        <activity android:name=".MainActivity" android:exported="false" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+        <activity android:name=".MainActivity" android:exported="false" android:theme="@style/Theme.Skepticall.Diagnostic" />
         <activity android:name=".RtcActivity" android:exported="true" android:launchMode="singleTop" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
