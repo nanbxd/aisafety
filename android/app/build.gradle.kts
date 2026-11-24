@@ -4,6 +4,7 @@ plugins {
     id("com.google.gms.google-services")
 }
 android {
+    sourceSets.getByName("main").assets.srcDir("../../server/static/rtc/assets")
     buildFeatures { buildConfig = true }
     namespace = "kz.safetyhack.audiotester"
     compileSdk = 35
@@ -25,6 +26,8 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
+    implementation("com.airbnb.android:lottie:6.6.2")
+    implementation("com.caverock:androidsvg-aar:1.4")
     implementation("com.google.firebase:firebase-messaging:24.1.2")
     implementation("io.github.webrtc-sdk:android:125.6422.07")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

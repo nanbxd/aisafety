@@ -23,6 +23,16 @@ class RtcActivity : Activity() {
     private val engine get() = CallRuntime.client(this)
     private val stateObserver: () -> Unit = { render() }
     private var resumed = false
+    private lateinit var root: LinearLayout
+    private lateinit var top: LinearLayout
+    private lateinit var nav: LinearLayout
+    private lateinit var lobbyExtras: LinearLayout
+    private lateinit var live: LinearLayout
+    private lateinit var dock: LinearLayout
+    private lateinit var avatar: CallAvatar
+    private lateinit var sceneTitle: TextView
+    private lateinit var sceneDescription: TextView
+    private lateinit var brand: TextView
     private lateinit var content: LinearLayout
     private lateinit var scroll: ScrollView
     private lateinit var setup: LinearLayout
@@ -52,16 +62,16 @@ class RtcActivity : Activity() {
     private var currentTab = 0
     private var wasRinging = false
     private val dark get() = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-    private val canvasColor get() = color(if (dark) "#101319" else "#F3F5F8")
-    private val surface get() = color(if (dark) "#1B2029" else "#FFFFFF")
-    private val ink get() = color(if (dark) "#F4F6FA" else "#171C26")
-    private val secondary get() = color(if (dark) "#B8C1D1" else "#596579")
-    private val primary get() = color(if (dark) "#B8C6FF" else "#3454D1")
-    private val onPrimary get() = color(if (dark) "#16245C" else "#FFFFFF")
-    private val tonal get() = color(if (dark) "#29334B" else "#E9EDFF")
-    private val callSurface get() = color(if (dark) "#222833" else "#171D29")
-    private val callInk get() = color("#F7F8FC")
-    private val callSecondary get() = color("#AEB8C9")
+    private val canvasColor get() = color(if (dark) "#202124" else "#FFFFFF")
+    private val surface get() = color(if (dark) "#292A2D" else "#FFFFFF")
+    private val ink get() = color(if (dark) "#E8EAED" else "#202124")
+    private val secondary get() = color(if (dark) "#BDC1C6" else "#5F6368")
+    private val primary get() = color(if (dark) "#A8C7FA" else "#0B57D0")
+    private val onPrimary get() = color(if (dark) "#062E6F" else "#FFFFFF")
+    private val tonal get() = color(if (dark) "#3C4043" else "#D3E3FD")
+    private val callSurface get() = color(if (dark) "#292A2D" else "#202124")
+    private val callInk get() = color("#E8EAED")
+    private val callSecondary get() = color("#BDC1C6")
     private val connected get() = color(if (dark) "#68D5B0" else "#39C79A")
     private val waiting get() = color("#F0B85A")
 
@@ -70,17 +80,18 @@ class RtcActivity : Activity() {
         window.statusBarColor = canvasColor
         window.navigationBarColor = canvasColor
         if (!dark) window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        val root = LinearLayout(this).apply {
+        root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(canvasColor)
             setOnApplyWindowInsetsListener { v, i ->
                 v.setPadding(i.systemWindowInsetLeft, i.systemWindowInsetTop, i.systemWindowInsetRight, i.systemWindowInsetBottom); i
             }
         }
-        val top = LinearLayout(this).apply {
+        top = LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL; setPadding(dp(24), dp(12), dp(24), dp(12))
         }
-        top.addView(text("Skepticall", 24f, ink, true), LinearLayout.LayoutParams(0, -2, 1f))
+        brand = text("Skepticall", 24f, secondary).apply { icon(this, "logo", secondary) }
+        top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         top.addView(button("Мой номер", false) { showAddressSettings() })
         root.addView(top)
         scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
@@ -91,9 +102,9 @@ class RtcActivity : Activity() {
         scroll.addView(content, android.widget.FrameLayout.LayoutParams(minOf(resources.displayMetrics.widthPixels, dp(680)), -2, Gravity.TOP or Gravity.CENTER_HORIZONTAL))
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         callPane = column(content)
-        callPane.addView(text("Звоните человеку.\nПрямо по номеру.", 34f, ink, true).apply { setLineSpacing(dp(2).toFloat(), 1f) })
-        callPane.addView(text("Номер работает как адрес внутри Skepticall. Мобильная сеть и минуты не используются.", 16f, secondary).apply { setPadding(0, dp(12), 0, dp(32)) })
         setup = column(callPane)
+        setup.addView(text("Ближе друг к другу.\nСпокойнее в разговоре.", 32f, ink).apply { setLineSpacing(dp(2).toFloat(), 1f) })
+        setup.addView(text("Звонки с вниманием к вашей безопасности.", 16f, secondary).apply { setPadding(0, dp(12), 0, dp(32)) })
         setup.addView(text("Ваш адрес", 18f, ink, true))
         ownAddress = text("", 20f, primary, true).apply { setPadding(0, dp(8), 0, dp(24)) }
         setup.addView(ownAddress)
@@ -103,7 +114,8 @@ class RtcActivity : Activity() {
             textSize = 20f; setTextColor(ink); setHintTextColor(secondary)
             setSingleLine(); hint = "+7 701 123 45 67"; contentDescription = "Номер получателя"
             inputType = android.text.InputType.TYPE_CLASS_PHONE
-            backgroundTintList = ColorStateList.valueOf(primary)
+            background = rounded(surface, 8).apply { setStroke(dp(1), secondary) }
+            setPadding(dp(16), dp(12), dp(16), dp(12))
             setText(savedInstanceState?.getString("target") ?: addressPrefs().getString("last_target", ""))
             minimumHeight = dp(56)
         }
@@ -119,16 +131,16 @@ class RtcActivity : Activity() {
             minHeight = dp(56); isSaveEnabled = false; setPadding(0, dp(16), 0, dp(16))
         }
         setup.addView(consent)
-        invite = button("Позвонить", true) { dialAddress() }
+        invite = button("Новый звонок", true) { dialAddress() }.apply { icon(this, "phone", onPrimary) }
         setup.addView(invite, spaced())
         connect = button("Включить входящие", false) { enableIncoming() }
         setup.addView(connect, spaced())
         summary = text("", 16f, primary, true)
         callPane.addView(summary, spaced())
-        val live = column(callPane).apply {
-            background = rounded(callSurface, 20); setPadding(dp(24), dp(24), dp(24), dp(24)); elevation = dp(3).toFloat()
+        live = column(callPane).apply {
+            background = rounded(callSurface, 24); setPadding(dp(24), dp(20), dp(24), dp(24)); minimumHeight = dp(380)
         }
-        live.addView(text("Состояние звонка", 15f, callSecondary, true))
+        live.addView(text("Skepticall · голосовой звонок", 14f, callSecondary).apply { icon(this, "logo", callSecondary) })
         val statusRow = row(live).apply { gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, dp(16)) }
         statusDot = View(this).apply {
             background = rounded(waiting, 999)
@@ -137,22 +149,30 @@ class RtcActivity : Activity() {
         statusRow.addView(statusDot, LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(12) })
         status = text("Готовы к разговору", 22f, callInk, true).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         statusRow.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
-        accept = button("Принять звонок", true) { withMicrophone { engine.accept() } }; live.addView(accept, spaced())
-        reject = button("Отклонить", false) { engine.end("reject") }.apply { setTextColor(color(if (dark) "#FFB4AB" else "#B3261E")) }; live.addView(reject, spaced())
-        val controls = row(live)
+        avatar = CallAvatar(this)
+        live.addView(avatar, LinearLayout.LayoutParams(dp(176), dp(176)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(32); bottomMargin = dp(28) })
+        sceneTitle = text("Здесь начинается разговор", 24f, callInk).apply { gravity = Gravity.CENTER }
+        live.addView(sceneTitle, LinearLayout.LayoutParams(-1, -2))
+        sceneDescription = text("Позвоните, и помощник будет рядом", 14f, callSecondary).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(16)) }
+        live.addView(sceneDescription, LinearLayout.LayoutParams(-1, -2))
+        dock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)); setBackgroundColor(color("#202124")) }
+        accept = button("Принять звонок", true) { withMicrophone { engine.accept() } }.apply { icon(this, "phone", onPrimary) }; dock.addView(accept, spaced())
+        reject = button("Отклонить", false) { engine.end("reject") }.apply { setTextColor(color("#F28B82")); background = rounded(color("#3C4043"), 28) }; dock.addView(reject, spaced())
+        val controls = row(dock)
         mute = button("Микрофон", false) { engine.toggleMute() }; equal(controls, mute)
         speaker = button("Динамик", false) { engine.toggleSpeaker() }; equal(controls, speaker)
-        hangup = button("Завершить звонок", false) { engine.end() }.apply { setTextColor(color(if (dark) "#FFB4AB" else "#B3261E")) }
-        live.addView(hangup, spaced())
+        hangup = button("", false) { engine.end() }.apply { contentDescription = "Завершить звонок"; background = rounded(color("#EA4335"), 28); setTextColor(Color.WHITE); icon(this, "hangup", Color.WHITE) }
+        equal(controls, hangup)
+        lobbyExtras = column(callPane)
         disconnect = button("Отключить входящие", false) {
             val own = ownAddressKey()
             if (engine.state.role == "caller" && own != null) CallService.join(this, own, "receiver") else engine.leave()
-        }; callPane.addView(disconnect, spaced())
-        callPane.addView(text("Можно свернуть приложение: входящие продолжат приходить с рингтоном. После исходящего вызова Skepticall автоматически вернётся на ваш адрес.", 14f, secondary).apply { setPadding(0, dp(16), 0, dp(8)) })
-        callPane.addView(button("Настройки входящих звонков", false) { incomingSettings() }, spaced())
-        callPane.addView(button("Как это работает", false) { showHelp() }, spaced())
+        }; lobbyExtras.addView(disconnect, spaced())
+        lobbyExtras.addView(text("Можно свернуть приложение: входящие продолжат приходить с рингтоном. После исходящего вызова Skepticall автоматически вернётся на ваш адрес.", 14f, secondary).apply { setPadding(0, dp(16), 0, dp(8)) })
+        lobbyExtras.addView(button("Настройки входящих звонков", false) { incomingSettings() }, spaced())
+        lobbyExtras.addView(button("Как это работает", false) { showHelp() }, spaced())
         analysisPane = column(content)
-        analysisPane.addView(text("Смысл за словами", 34f, ink, true))
+        analysisPane.addView(text("Анализ разговора", 28f, ink))
         analysisPane.addView(text("Сигналы риска и расшифровка речи собеседника", 16f, secondary).apply { setPadding(0, dp(8), 0, dp(28)) })
         risk = text("", 20f, ink, true).apply { background = rounded(tonal, 20); setPadding(dp(24), dp(24), dp(24), dp(24)); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         analysisPane.addView(risk, spaced())
@@ -162,9 +182,10 @@ class RtcActivity : Activity() {
         transcript = text("", 18f, ink).apply { setTextIsSelectable(true); setLineSpacing(dp(6).toFloat(), 1f) }
         analysisPane.addView(transcript, spaced())
         analysisPane.addView(text("Модель может ошибаться. Не сообщайте коды и пароли; проверяйте просьбы через официальный канал.", 14f, secondary).apply { setPadding(0, dp(32), 0, dp(8)) })
-        val nav = LinearLayout(this).apply { setPadding(dp(16), dp(10), dp(16), dp(10)); setBackgroundColor(surface); minimumHeight = dp(72); elevation = dp(8).toFloat() }
+        nav = LinearLayout(this).apply { setPadding(dp(16), dp(10), dp(16), dp(10)); setBackgroundColor(surface); minimumHeight = dp(72); elevation = dp(8).toFloat() }
         callsTab = button("Разговор", false) { currentTab = 0; render(); scroll.scrollTo(0, 0) }; equal(nav, callsTab)
         analysisTab = button("Анализ", false) { currentTab = 1; render(); scroll.scrollTo(0, 0) }; equal(nav, analysisTab)
+        root.addView(dock)
         root.addView(nav)
         setContentView(root)
         render()
@@ -195,7 +216,49 @@ class RtcActivity : Activity() {
         val ownKey = ownAddressKey()
         val targetKey = PhoneAddress.key(target.text.toString())
         ownAddress.text = ownNumber ?: "Не настроен — нажмите «Мой номер»"
-        setup.visibility = View.VISIBLE
+        val onCall = s.busy || s.ringing || s.inCall
+        setup.visibility = if (onCall) View.GONE else View.VISIBLE
+        lobbyExtras.visibility = if (onCall) View.GONE else View.VISIBLE
+        dock.visibility = if (onCall) View.VISIBLE else View.GONE
+        root.setBackgroundColor(if (onCall) color("#202124") else canvasColor)
+        nav.setBackgroundColor(if (onCall) color("#202124") else surface)
+        summary.setTextColor(if (onCall) callSecondary else primary)
+        live.background = rounded(if (onCall) color("#292A2D") else callSurface, 24)
+        brand.setTextColor(if (onCall) callInk else secondary)
+        icon(brand, "logo", if (onCall) callInk else secondary)
+        window.statusBarColor = if (onCall) color("#202124") else canvasColor
+        window.navigationBarColor = window.statusBarColor
+        window.decorView.systemUiVisibility = if (!dark && !onCall) View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR else 0
+        analysisPane.background = rounded(surface, 24)
+        analysisPane.setPadding(dp(20), dp(20), dp(20), dp(20))
+        val face = when {
+            !onCall -> "idle"
+            !s.inCall -> "ringing"
+            s.role != "receiver" -> "listening"
+            s.analysisUnavailable -> "unavailable"
+            s.riskLevel in listOf("high", "medium", "low") -> s.riskLevel
+            else -> "listening"
+        }
+        avatar.showState(face)
+        sceneTitle.text = when (face) {
+            "high" -> "Возможное мошенничество"
+            "medium" -> "Стоит проверить просьбу"
+            "low" -> "Явных признаков не отмечено"
+            "unavailable" -> "Анализ недоступен"
+            "ringing" -> "Ожидаем собеседника"
+            "listening" -> "Слушаем вместе с вами"
+            else -> "Здесь начинается разговор"
+        }
+        sceneDescription.text = when {
+            face == "high" -> "Не сообщайте коды и пароли. Проверьте, кто вам звонит."
+            face == "medium" -> "Не торопитесь. Уточните просьбу через официальный канал."
+            face == "low" -> "Это не гарантия безопасности. Будьте внимательны."
+            face == "unavailable" -> "Разговор продолжается без проверки."
+            s.inCall && s.role != "receiver" -> "Анализ доступен принимающему участнику."
+            face == "listening" -> "Оценки пока нет. Продолжайте разговор."
+            face == "ringing" -> "Помощник подключится после начала разговора"
+            else -> "Позвоните, и помощник будет рядом"
+        }
         summary.visibility = if (s.connected) View.VISIBLE else View.GONE
         summary.text = if (s.role == "caller") "Звоним на ${PhoneAddress.display(s.room)}" else "Ваш адрес ${ownNumber ?: PhoneAddress.display(s.room)}"
         connect.visibility = if (s.connected && s.role == "receiver") View.GONE else View.VISIBLE
@@ -214,8 +277,16 @@ class RtcActivity : Activity() {
         reject.visibility = accept.visibility
         mute.visibility = if (s.inCall) View.VISIBLE else View.GONE
         speaker.visibility = mute.visibility
-        mute.text = if (s.muted) "Включить микрофон" else "Выключить микрофон"
-        speaker.text = if (s.speaker) "Наушник" else "Динамик"
+        mute.text = ""
+        mute.contentDescription = if (s.muted) "Включить микрофон" else "Выключить микрофон"
+        mute.background = rounded(color(if (s.muted) "#F9DEDC" else "#3C4043"), 28)
+        mute.setTextColor(color(if (s.muted) "#601410" else "#E8EAED"))
+        icon(mute, if (s.muted) "mic-off" else "mic", color(if (s.muted) "#601410" else "#E8EAED"))
+        speaker.background = rounded(color("#3C4043"), 28)
+        speaker.setTextColor(callInk)
+        icon(speaker, "speaker", callInk)
+        speaker.text = ""
+        speaker.contentDescription = if (s.speaker) "Переключить на наушник" else "Включить динамик"
         hangup.visibility = if (s.busy && !(s.ringing && s.role == "receiver")) View.VISIBLE else View.GONE
         disconnect.visibility = if (((s.connected || s.connecting) && s.role == "receiver") || (!s.connected && PushCalls.enabled(this))) View.VISIBLE else View.GONE
         disconnect.text = "Отключить входящие"
@@ -399,8 +470,16 @@ class RtcActivity : Activity() {
     private fun button(value: String, filled: Boolean, action: () -> Unit) = Button(this).apply {
         text = value; textSize = 15f; isAllCaps = false; minHeight = dp(54)
         setPadding(dp(12), dp(10), dp(12), dp(10))
-        background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(color("#305B78FF")), rounded(if (filled) primary else tonal, 14), null)
+        background = android.graphics.drawable.RippleDrawable(ColorStateList.valueOf(color("#305B78FF")), rounded(if (filled) primary else tonal, 28), null)
         setTextColor(if (filled) onPrimary else primary); setOnClickListener { action() }
+    }
+    private fun icon(view: TextView, name: String, tint: Int) {
+        val picture = com.caverock.androidsvg.SVG.getFromAsset(assets, "icons/$name.svg").renderToPicture()
+        val bitmap = android.graphics.Bitmap.createBitmap(dp(24), dp(24), android.graphics.Bitmap.Config.ARGB_8888)
+        android.graphics.Canvas(bitmap).drawPicture(picture, android.graphics.Rect(0, 0, dp(24), dp(24)))
+        val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap).apply { setTint(tint); setBounds(0, 0, dp(24), dp(24)) }
+        view.setCompoundDrawablesRelative(drawable, null, null, null)
+        view.compoundDrawablePadding = dp(10)
     }
     private fun selected(button: Button, active: Boolean) {
         button.isSelected = active

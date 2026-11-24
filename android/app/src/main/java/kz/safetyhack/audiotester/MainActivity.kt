@@ -38,23 +38,25 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = 0xfff5f6f2.toInt()
-        window.navigationBarColor = 0xfff5f6f2.toInt()
+        window.statusBarColor = 0xffffffff.toInt()
+        window.navigationBarColor = 0xffffffff.toInt()
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(24), dp(20), dp(24), dp(32))
-            setBackgroundColor(0xfff5f6f2.toInt())
+            setBackgroundColor(0xffffffff.toInt())
         }
         body.setOnApplyWindowInsetsListener { v, insets ->
             v.setPadding(dp(24), dp(20) + insets.systemWindowInsetTop, dp(24), dp(32) + insets.systemWindowInsetBottom)
             insets
         }
         fun label(text: String, size: Float = 18f): TextView = TextView(this).apply {
-            this.text = text; textSize = size; setTextColor(0xff172b29.toInt())
+            this.text = text; textSize = size; setTextColor(0xff202124.toInt())
             setPadding(0, dp(12), 0, dp(8)); body.addView(this)
         }
         fun button(text: String, action: () -> Unit) = Button(this).apply {
-            this.text = text; textSize = 18f; isAllCaps = false; minHeight = dp(56)
+            this.text = text; textSize = 16f; isAllCaps = false; minHeight = dp(56)
+            setTextColor(0xff0b57d0.toInt())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(0xffd3e3fd.toInt()); cornerRadius = dp(28).toFloat() }
             body.addView(this, LinearLayout.LayoutParams(-1, -2)); setOnClickListener { action() }
         }
         label("Проверка микрофона", 28f)

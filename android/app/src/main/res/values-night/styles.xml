@@ -1,9 +1,9 @@
 <resources>
     <style name="Theme.Skepticall" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#B8C6FF</item>
+        <item name="android:colorAccent">#A8C7FA</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
-        <item name="android:windowBackground">#101319</item>
+        <item name="android:windowBackground">#202124</item>
     </style>
 </resources>

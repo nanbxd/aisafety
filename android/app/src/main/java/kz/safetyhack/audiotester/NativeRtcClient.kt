@@ -21,6 +21,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         var muted: Boolean = false, var speaker: Boolean = false,
         var room: String = "", var role: String = "receiver", var status: String = "Настройте свой номер, чтобы начать",
         var analysis: String = "Анализ ещё не начался", var transcript: String = "",
+        var analysisUnavailable: Boolean = false,
         var risk: String = "Оценки пока нет", var riskLevel: String = "unknown"
     )
     val state = State()
@@ -184,7 +185,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
     }
     private fun beginCall() {
         callGeneration++; state.busy = true; state.muted = false
-        state.transcript = ""; state.risk = "Оценки пока нет"; state.riskLevel = "unknown"
+        state.analysisUnavailable = false; state.transcript = ""; state.risk = "Оценки пока нет"; state.riskLevel = "unknown"
         state.analysis = if (state.role == "receiver") "Ожидаем начала разговора" else "Анализ доступен принимающему участнику"
     }
     private fun microphone() {
@@ -448,8 +449,7 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
         analysisTicket = null
         cancel(analysisTimer)
         val ws = analysisSocket; analysisSocket = null; ws?.close(1000, null)
-        state.analysis = message
-        notifyChange()
+        state.analysisUnavailable = true; state.analysis = message; notifyChange()
     }
 
     fun end(type: String = "hangup") {
