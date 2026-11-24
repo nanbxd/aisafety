@@ -303,49 +303,155 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
             }
         }
     }
+    private var analysisAttempts = 0
+    private var analysisTicket: String? = null
+    private var analysisEnded = false
     private fun openAnalysis(ticket: String) {
-        val generation = callGeneration
+        analysisTicket = ticket
+        analysisAttempts = 0
+        analysisEnded = false
         state.analysis = "Подключаем распознавание…"
+        notifyChange()
+        attemptAnalysis()
+    }
+    private fun attemptAnalysis() {
+        val ticket = analysisTicket ?: return
+        if (analysisEnded || !state.busy) return
+        val generation = callGeneration
+        analysisAttempts++
         val ws = http.newWebSocket(request("/ws/rtc-audio"), object : WebSocketListener() {
             override fun onOpen(ws: WebSocket, response: Response) { main.post {
-                if (generation != callGeneration || analysisSocket !== ws) { ws.close(1000, null); return@post }
-                ws.send(json("start").put("audio_ticket", ticket).put("room", state.room).put("call_id", callId)
-                    .put("sample_rate", 16000).put("channels", 1).put("format", "pcm_s16le").put("consent", true).put("analysis_provider", "google").toString())
+                if (generation != callGeneration || analysisSocket !== ws || analysisEnded) { ws.close(1000, null); return@post }
+                // Contract matches server/rtc.py /ws/rtc-audio and the /rtc web client.
+                ws.send(json("start")
+                    .put("audio_ticket", ticket)
+                    .put("room", state.room)
+                    .put("call_id", callId)
+                    .put("sample_rate", 16000)
+                    .put("channels", 1)
+                    .put("format", "pcm_s16le")
+                    .put("consent", true)
+                    .put("analysis_provider", "google")
+                    .put("language", "ru")
+                    .toString())
             } }
             override fun onMessage(ws: WebSocket, text: String) { main.post {
-                if (generation != callGeneration || analysisSocket !== ws) return@post
+                if (generation != callGeneration || analysisSocket !== ws || analysisEnded) return@post
                 runCatching {
                     val e = JSONObject(text)
                     when (e.getString("type")) {
                         "ready" -> {
                             cancel(analysisTimer)
-                            if (e.optString("mode") != "gemini") analysisFailure("Распознавание недоступно в режиме сервера. Разговор продолжается без анализа.")
-                            else { analysisReady = true; state.analysis = "Gemini Live · ожидаем речь собеседника" }
+                            if (e.optString("mode") != "gemini") {
+                                analysisFailure("Распознавание недоступно в режиме сервера. Разговор продолжается без анализа.")
+                            } else {
+                                analysisReady = true
+                                analysisTicket = null
+                                state.analysis = "Gemini Live · ожидаем речь собеседника"
+                            }
                         }
-                        "transcript" -> if (analysisReady) { state.transcript = (state.transcript + "\n" + e.optString("text").take(12000)).trim().takeLast(24000); state.analysis = "Gemini Live · речь распознаётся" }
+                        "transcript" -> if (analysisReady) {
+                            state.transcript = (state.transcript + "\n" + e.optString("text").take(12000)).trim().takeLast(24000)
+                            state.analysis = "Gemini Live · речь распознаётся"
+                        }
                         "risk" -> if (analysisReady) {
                             state.riskLevel = e.optString("level")
-                            val label = when (state.riskLevel) { "high" -> "Тревожные признаки"; "medium" -> "Проверьте просьбу"; "low" -> "Явных признаков не отмечено. Это не гарантия безопасности."; else -> "Оценка недоступна" }
+                            val label = when (state.riskLevel) {
+                                "high" -> "Тревожные признаки"
+                                "medium" -> "Проверьте просьбу"
+                                "low" -> "Явных признаков не отмечено. Это не гарантия безопасности."
+                                else -> "Оценка недоступна"
+                            }
                             val reasons = e.optJSONArray("reasons")
-                            state.risk = listOf(label, e.optString("message").take(4000), if (reasons == null) "" else (0 until minOf(reasons.length(), 20)).joinToString("\n") { reasons.optString(it).take(2000) }).filter { it.isNotBlank() }.joinToString("\n\n")
+                            state.risk = listOf(
+                                label,
+                                e.optString("message").take(4000),
+                                if (reasons == null) "" else (0 until minOf(reasons.length(), 20)).joinToString("\n") { reasons.optString(it).take(2000) }
+                            ).filter { it.isNotBlank() }.joinToString("\n\n")
                         }
-                        "error", "done" -> analysisFailure("Анализ остановлен сервером. Разговор продолжается; оценка неполная.")
+                        "done" -> analysisComplete(
+                            if (state.transcript.isNotBlank()) "Анализ завершён. Разговор можно продолжать без распознавания."
+                            else "Анализ завершён. Речь собеседника не была распознана."
+                        )
+                        "error" -> {
+                            val code = e.optString("code")
+                            // Busy before ready: ticket is not consumed; retry like the web client.
+                            if (code == "busy" && !analysisReady) {
+                                cancel(analysisTimer)
+                                val current = analysisSocket
+                                analysisSocket = null
+                                current?.close(1000, null)
+                                if (analysisAttempts >= 20) {
+                                    analysisFailure("Анализ не запустился: сервер остаётся занят. Разговор продолжается без проверки.")
+                                    return@runCatching
+                                }
+                                state.analysis = "Сервер завершает предыдущий анализ. Повторяем подключение…"
+                                notifyChange()
+                                main.postDelayed({
+                                    if (generation == callGeneration && !analysisEnded && analysisTicket != null) attemptAnalysis()
+                                }, 750)
+                                return@runCatching
+                            }
+                            val detail = when (code) {
+                                "quota_exceeded" -> "Лимит Google Gemini исчерпан."
+                                "model_unavailable" -> "Модель Gemini Live недоступна."
+                                "authentication_failed" -> "Google отклонил доступ к Gemini."
+                                "session_expired" -> "Сеанс Gemini Live истёк."
+                                "upstream_closed" -> "Связь с Google Gemini потеряна."
+                                "processing_timeout" -> "Google Gemini не завершил обработку вовремя."
+                                "upstream_error" -> "Ошибка Google Gemini."
+                                "consent_required" -> "Нужно согласие на отправку аудио в Google."
+                                else -> "Анализ остановлен сервером."
+                            }
+                            analysisFailure("$detail Разговор продолжается; оценка неполная.")
+                        }
                     }
                     notifyChange()
                 }.onFailure { analysisFailure("Неверный ответ сервера анализа. Разговор продолжается без проверки.") }
             } }
-            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) { main.post { if (generation == callGeneration && analysisSocket === ws) analysisFailure("Анализ недоступен. Разговор продолжается без проверки.") } }
+            override fun onFailure(ws: WebSocket, t: Throwable, response: Response?) { main.post {
+                if (generation == callGeneration && analysisSocket === ws && !analysisEnded) {
+                    analysisFailure("Анализ недоступен. Разговор продолжается без проверки.")
+                }
+            } }
             override fun onClosing(ws: WebSocket, code: Int, reason: String) { ws.close(code, reason) }
-            override fun onClosed(ws: WebSocket, code: Int, reason: String) { main.post { if (generation == callGeneration && analysisSocket === ws) analysisFailure("Связь с анализом потеряна. Оценка неполная.") } }
+            override fun onClosed(ws: WebSocket, code: Int, reason: String) { main.post {
+                // Ignore clean close after done/error; only flag unexpected drops mid-stream.
+                if (generation == callGeneration && analysisSocket === ws && !analysisEnded && analysisReady) {
+                    analysisFailure("Связь с анализом потеряна. Оценка неполная.")
+                } else if (analysisSocket === ws) {
+                    analysisSocket = null
+                }
+            } }
         })
         analysisSocket = ws
-        analysisTimer = timer(15000) { if (generation == callGeneration && !analysisReady) analysisFailure("Анализ не запустился вовремя. Разговор продолжается без проверки.") }
+        analysisTimer = timer(15000) {
+            if (generation == callGeneration && !analysisReady && !analysisEnded) {
+                analysisFailure("Анализ не запустился вовремя. Разговор продолжается без проверки.")
+            }
+        }
+    }
+    private fun analysisComplete(message: String) {
+        if (analysisEnded) return
+        analysisEnded = true
+        analysisReady = false
+        analysisTicket = null
+        cancel(analysisTimer)
+        val ws = analysisSocket; analysisSocket = null; ws?.close(1000, null)
+        state.analysis = message
+        notifyChange()
     }
     private fun analysisFailure(message: String) {
-        analysisReady = false; cancel(analysisTimer)
+        if (analysisEnded) return
+        analysisEnded = true
+        analysisReady = false
+        analysisTicket = null
+        cancel(analysisTimer)
         val ws = analysisSocket; analysisSocket = null; ws?.close(1000, null)
-        state.analysis = message; notifyChange()
+        state.analysis = message
+        notifyChange()
     }
+
     fun end(type: String = "hangup") {
         if (!state.busy) return
         if (callId == null) { failCall("Вызов отменён. Можно позвонить снова."); return }
@@ -358,6 +464,9 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
     private fun stopCall() {
         callGeneration++; cancel(callTimer); cancel(analysisTimer)
         analysisReady = false
+        analysisEnded = true
+        analysisTicket = null
+        analysisAttempts = 0
         val ws = analysisSocket; analysisSocket = null; ws?.close(1000, null)
         remoteSink?.let { remoteTrack?.removeSink(it) }; remoteSink = null; remoteTrack = null
         pc?.close(); pc?.dispose(); pc = null
