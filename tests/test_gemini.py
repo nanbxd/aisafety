@@ -188,7 +188,7 @@ def test_rtc_provider_consent_before_ticket_consumption(provider):
         cid, ticket = accept(caller, receiver)
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             assert start(ws, cid, ticket, analysis_provider=provider)["code"] == "consent_required"
-        assert app.state.rtc.ticket == ticket and not app.state.busy
+        assert app.state.rtc.find(ROOM).ticket == ticket and not app.state.busy
         assert not backend.closed and not backend.frames
         with client.websocket_connect("/ws/rtc-audio", headers=ORIGIN) as ws:
             assert start(ws, cid, ticket)["mode"] == "gemini"

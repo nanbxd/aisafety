@@ -117,9 +117,9 @@ async def fail(ws, message="Invalid request", code=1008, *, error_code=None):
 
 
 class Hub:
-    def __init__(self):
+    def __init__(self, room=None):
         self.lock = asyncio.Lock()
-        self.room = None
+        self.room = room
         self.peers = {}
         self.call_id = None
         self.accepted = False
@@ -191,9 +191,32 @@ class Hub:
                     await self.broadcast({"type": "rejected", "call_id": call_id, "reason": "timeout"})
 
 
+class HubDirectory:
+    """Independent signaling hubs keyed by the user's internal phone address."""
+    def __init__(self):
+        self.hubs = {}
+
+    def for_room(self, room):
+        hub = self.hubs.get(room)
+        if hub is None:
+            hub = Hub(room)
+            self.hubs[room] = hub
+        return hub
+
+    def find(self, room):
+        return self.hubs.get(room) if isinstance(room, str) else None
+
+    def registered_devices(self):
+        return sum(bool(hub.device(room)) for room, hub in tuple(self.hubs.items()))
+
+    def prune(self, room, hub):
+        if self.hubs.get(room) is hub and not hub.peers and not hub.call_id and not hub.device(room):
+            self.hubs.pop(room, None)
+
+
 def install_rtc(app):
-    hub = Hub()
-    app.state.rtc = hub
+    directory = HubDirectory()
+    app.state.rtc = directory
     static = Path(__file__).parent / "static" / "rtc"
     app.mount("/rtc-assets", StaticFiles(directory=str(static), check_dir=False), name="rtc-assets")
 
@@ -227,6 +250,10 @@ def install_rtc(app):
                 raise ValueError()
         except (ValueError, UnicodeError):
             raise HTTPException(400, "Invalid request")
+        room = data.get("room")
+        hub = directory.find(room)
+        if hub is None:
+            raise HTTPException(404, "Call unavailable")
         async with hub.lock:
             token = data.get("token")
             valid = (isinstance(token, str) and hub.push_target is not None
@@ -250,6 +277,8 @@ def install_rtc(app):
             return
         await ws.accept()
         role = None
+        room = None
+        hub = None
         joined = False
         try:
             start = await read_json(ws)
@@ -257,13 +286,13 @@ def install_rtc(app):
             if start.get("type") != "join" or start.get("consent") is not True or role not in {"caller", "receiver"} or not isinstance(room, str) or not ROOM.fullmatch(room):
                 raise ValueError("Invalid join")
             servers = ice_servers()
+            hub = directory.for_room(room)
             async with hub.lock:
                 resume = start.get("resume_call")
                 if resume is not None and (role != "receiver" or resume != hub.call_id or hub.accepted or hub.room != room):
                     raise ValueError("Call expired")
-                if (hub.room and hub.room != room) or role in hub.peers:
+                if role in hub.peers:
                     raise ValueError("Room or role is busy")
-                hub.room = room
                 hub.peers[role] = ws
                 joined = True
                 other = "receiver" if role == "caller" else "caller"
@@ -288,7 +317,7 @@ def install_rtc(app):
                         if role != "receiver" or not isinstance(token, str) or not 20 <= len(token) <= 4096:
                             raise ValueError("Invalid push registration")
                         hub.device(room)  # Expire old registrations before enforcing bound.
-                        if room not in hub.devices and len(hub.devices) >= 128:
+                        if room not in hub.devices and directory.registered_devices() >= 128:
                             raise ValueError("Push registration capacity reached")
                         hub.devices[room] = (token, time.time() + 86400)
                         await hub.send(role, {"type": "push-ready", "enabled": push.configured()})
@@ -364,18 +393,19 @@ def install_rtc(app):
         except Exception:
             await fail(ws, "Signaling unavailable", 1011)
         finally:
-            if joined:
-                async with hub.lock:
-                    if hub.peers.get(role) is ws:
-                        del hub.peers[role]
-                        call_id = hub.call_id
-                        hub.reset()
-                        with contextlib.suppress(Exception):
-                            await hub.broadcast({"type": "peer-left", "role": role, "call_id": call_id,
-                                                 "push_available": role == "receiver" and bool(hub.device(hub.room))})
-                        if not hub.peers:
-                            hub.room = None
-                            hub.ended_calls.clear()
+            if hub is not None:
+                if joined:
+                    async with hub.lock:
+                        if hub.peers.get(role) is ws:
+                            del hub.peers[role]
+                            call_id = hub.call_id
+                            hub.reset()
+                            with contextlib.suppress(Exception):
+                                await hub.broadcast({"type": "peer-left", "role": role, "call_id": call_id,
+                                                     "push_available": role == "receiver" and bool(hub.device(hub.room))})
+                            if not hub.peers:
+                                hub.ended_calls.clear()
+                directory.prune(room, hub)
 
     @app.websocket("/ws/rtc-audio")
     async def audio(ws: WebSocket):
@@ -392,6 +422,7 @@ def install_rtc(app):
         disconnected = False
         send_lock = asyncio.Lock()
         phase = "waiting_for_start"
+        hub = None
         total = 0
         packet_count = 0
         last_progress = time.monotonic()
@@ -408,6 +439,9 @@ def install_rtc(app):
                 raise ValueError("Expected consent and PCM s16le, 16000 Hz, mono")
             if app.state.analysis and start.get("analysis_provider") != "google":
                 raise AnalysisError("consent_required", "Explicit consent to send audio to Google is required: analysis_provider=google.")
+            hub = directory.find(start.get("room"))
+            if hub is None:
+                raise ValueError("Unknown address")
             async with hub.lock:
                 phase = "validating_ticket"
                 ticket = start.get("audio_ticket")

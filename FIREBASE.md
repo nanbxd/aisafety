@@ -11,18 +11,19 @@ Do **not** upload this Android configuration to Render.
 
 1. In the **same Firebase project**, open Project settings → Service accounts →
    Firebase Admin SDK → Generate new private key. Keep the downloaded JSON private.
-2. Open Render → `safetyhack-webrtc` → Environment → Secret Files → Add Secret File.
-   Name it `firebase-service-account.json` and paste the **server key JSON** there.
-3. Add an environment variable:
+2. Open Render → `safetyhack-webrtc` → Environment and add a secret environment variable containing the complete server key JSON:
 
    ```text
-   GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase-service-account.json
+   FIREBASE_SERVICE_ACCOUNT_JSON={...complete service-account JSON...}
    ```
+
+   Alternatively, add a Render Secret File named `firebase-service-account.json` and set
+   `GOOGLE_APPLICATION_CREDENTIALS=/etc/secrets/firebase-service-account.json`.
 
 4. In Firebase Project settings → Cloud Messaging, ensure Firebase Cloud Messaging
    API (V1) is enabled. The service account must have permission to send FCM messages.
 5. Deploy the updated server code, build/install the updated APK on both phones.
-   Allow microphone and notifications. On the receiver, join the room with consent.
+   Allow microphone and notifications. On the receiver, save a phone address and enable incoming calls with consent.
    Wait for the status confirming push readiness, then test an incoming call.
 
 The JSON key is a server secret: never add it to Git, Android assets or chat.
@@ -32,8 +33,8 @@ No Firebase Functions, Firestore or paid Firebase plan is required by this integ
 
 ## Behavior and current limits
 
-- The joined receiver registers its FCM token over the existing room WebSocket.
-  Room codes remain bearer capabilities: share them only with the intended caller.
+- The available receiver registers its FCM token for the saved phone address.
+  Address ownership is not verified by SMS in this MVP; another device cannot hold the same live receiver address at the same time.
 - When the receiver socket is absent, the caller can invite via high-priority FCM.
   Android checks the pending call with the server before showing the ringtone and
   system Answer/Decline controls. Push itself never starts microphone recording.
@@ -45,8 +46,8 @@ No Firebase Functions, Firestore or paid Firebase plan is required by this integ
   disable the saved registration. Android force-stop requires reopening the app;
   FCM cannot override force-stop, notification restrictions or missing Google Play services.
 - This demo retains up to 128 receiver registrations **in server memory for 24 hours**.
-  After a Render restart/redeploy, receivers must rejoin. This is not a durable
-  user/contact directory. The single-process, single-active-room architecture remains.
+  After a Render restart/redeploy, receivers must enable incoming calls again. This is not a durable
+  verified user/contact directory. Multiple addresses are isolated, but the server still uses one process.
 - FCM cannot preserve an already active WebRTC call after its process dies.
   Existing foreground-service behavior handles ordinary app backgrounding.
 - Real phone delivery, lock-screen behavior and audio require an end-to-end test.

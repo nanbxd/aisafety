@@ -2,21 +2,21 @@
 name: Skepticall
 description: Native Android voice-call workspace with explicit consent and remote speech analysis.
 colors:
-  primary: "#2949BA"
+  primary: "#3454D1"
   on-primary: "#FFFFFF"
-  background: "#F5F6FA"
+  background: "#F3F5F8"
   surface: "#FFFFFF"
-  ink: "#192237"
-  secondary-text: "#526078"
-  tonal: "#E8EDFF"
+  ink: "#171C26"
+  secondary-text: "#596579"
+  tonal: "#E9EDFF"
   danger: "#B3261E"
-  dark-primary: "#B7C6FF"
+  dark-primary: "#B8C6FF"
   dark-on-primary: "#14245F"
-  dark-background: "#11141B"
-  dark-surface: "#1D2230"
-  dark-ink: "#F1F2FA"
-  dark-secondary-text: "#B8C2D8"
-  dark-tonal: "#293450"
+  dark-background: "#101319"
+  dark-surface: "#1B2029"
+  dark-ink: "#F4F6FA"
+  dark-secondary-text: "#B8C1D1"
+  dark-tonal: "#29334B"
   dark-danger: "#FFB4AB"
 ---
 
@@ -24,7 +24,7 @@ colors:
 
 ## Overview
 
-The primary app is a native Android call workspace built from Android views. Its cool neutral canvas, blue actions, rounded surfaces and Russian labels distinguish connection, conversation and analysis. The main screen contains no WebView or server-address entry; the service address is supplied with the build.
+The primary app is a native Android call workspace built from Android views. Its cool neutral canvas, cobalt actions, dark call surface and Russian labels distinguish connection, conversation and analysis. The main screen contains no WebView or server-address entry; the service address is supplied with the build.
 
 The implementation source is [RtcActivity](android/app/src/main/java/kz/safetyhack/audiotester/RtcActivity.kt), with state transitions in [NativeRtcClient](android/app/src/main/java/kz/safetyhack/audiotester/NativeRtcClient.kt). This document records the implementation, not an approved screenshot. **Native visual validation is pending:** no Android device or emulator was attached for this review. Small-screen layout, font scaling, TalkBack, keyboard behavior and light/dark rendering still need device inspection.
 
@@ -52,9 +52,9 @@ Buttons preserve sentence case. Android provides the default line metrics. The l
 
 ## Layout
 
-The native screen is a vertical layout with a fixed app title/Help row, one scrolling content region and a bottom pair of navigation buttons: Conversation and Analysis. Each tab selects a pane within the same scroll region. The scroll content is horizontally centered and capped at 680dp width. Main content has 24dp horizontal padding, 12dp top padding and 24dp bottom padding. Window insets are applied to the root.
+The native screen is a vertical layout with a fixed app title/My number row, one scrolling content region and a bottom pair of navigation buttons: Conversation and Analysis. Each tab selects a pane within the same scroll region. The scroll content is horizontally centered and capped at 680dp width. Main content has 24dp horizontal padding, 12dp top padding and 24dp bottom padding. Window insets are applied to the root.
 
-The conversation pane presents the introduction, setup, connected room summary, call surface, exit action and background-call instruction. Setup contains paired role buttons, room field, paired room actions, consent and connection action. Setup disappears after joining. The call surface has 24dp internal padding; paired controls use equal widths. No native tablet breakpoint or two-column arrangement is implemented.
+The conversation pane presents the saved personal address, recipient-number field, consent, incoming-call action, call surface and background-call instruction. The setup remains available while idle so a user can dial immediately. The call surface has 24dp internal padding; paired controls use equal widths. No native tablet breakpoint or two-column arrangement is implemented.
 
 The analysis pane presents a risk surface, processing status, transcript heading, transcript and a caution about model error. Incoming calls switch to the conversation tab, reset scrolling and request focus on the answer button; manual tab changes also reset scrolling. Long content uses the main scroll region rather than a separate bounded transcript scroller.
 
@@ -62,25 +62,25 @@ The legacy browser remains a two-column desktop workspace (maximum width 1360px)
 
 ## Elevation & Depth
 
-The native composition uses tonal contrast between the root background, call surface and analysis surface. No custom shadow or elevation is assigned by the activity. Buttons use Android ripple drawables; no custom entrance animation is implemented. Platform dialog and control rendering remain subject to the Android theme and require device inspection.
+The native composition uses tonal contrast between the root background, dark call surface and pale analysis surface. The call surface has subtle 3dp elevation and the bottom navigation has 8dp elevation. Buttons use Android ripple drawables; no custom entrance animation is implemented. Platform dialog and control rendering remain subject to the Android theme and require device inspection.
 
 The legacy browser uses flat panels, borders and a dark call panel. Its small arrival animation is disabled under reduced-motion preferences.
 
 ## Shapes
 
-Native buttons have rounded corners (18dp), the risk surface uses 24dp corners and the call surface uses 28dp corners. Buttons have at least 52dp height and 12dp horizontal / 10dp vertical padding. The room field and consent control have at least 56dp height. The room field keeps its native underline with a primary tint.
+Native buttons have rounded corners (14dp), while the risk and call surfaces use 20dp corners. Buttons have at least 54dp height and 12dp horizontal / 10dp vertical padding. The phone field and consent control have at least 56dp height. The phone field keeps its native underline with a primary tint.
 
 Legacy browser panels use 16px corners and controls use 8px corners. Do not copy those pixel measurements into native views.
 
 ## Components
 
-- **Setup:** explicit role buttons, a single-line room field, new-code and share actions, a Google Gemini consent checkbox and a full-width connection button. The field exposes an inline format error. Connecting disables the role, room, consent and connection controls; action labels communicate progress.
-- **Call surface:** a textual status precedes actions. Invite appears for the caller; answer and reject appear for an incoming receiver call. Mute and route controls appear during the call, and the end-call action uses danger text. Labels reflect mute and speaker state. The native foreground service keeps the room and call alive when the activity is hidden or recreated. Incoming calls use a system ringtone and CallStyle notification; full-screen display follows Android permissions. Explicit room exit ends the service. Process death still requires rejoining; push is not configured.
-- **Connected summary:** room code and participant role replace setup while connected. It is plain primary-colored text rather than a separate card.
+- **Setup:** the user's saved number is shown as an address above a single-line recipient field, Google Gemini consent and separate call/incoming actions. Invalid and self-addressed numbers expose inline errors. The number is converted to an internal `tel_` key and never initiates a carrier call.
+- **Call surface:** a textual status precedes actions. Answer and reject appear for an incoming call. Mute and route controls appear during the call, and the end-call action uses danger text. Labels reflect mute and speaker state. The native foreground service keeps the address session and call alive when the activity is hidden or recreated. Incoming calls use a system ringtone and CallStyle notification; full-screen display follows Android permissions. After an outgoing call the service returns to the saved incoming address.
+- **Connected summary:** the active phone address and current direction appear as plain primary-colored text rather than a separate card.
 - **Analysis surface:** risk text uses the tonal background and includes its label, explanation and reasons. Processing status reports unavailable or incomplete analysis. The initial state contains no fabricated speech or assessment; low-risk wording explicitly disclaims a safety guarantee.
 - **Navigation:** two equal-width rounded buttons sit on the surface-colored bottom row. Selected tabs and roles use primary fill with on-primary text; unselected ones use tonal fill. There is no navigation drawer.
 - **Help:** an Android dialog explains the three-step flow and links to the microphone diagnostic activity.
-- **Accessibility:** status, risk and analysis text use polite accessibility live regions; the room field has a content description; transcript text is selectable. Touch targets have explicit minimum heights. Keyboard focus, selected-state announcements, large-font wrapping and actual contrast remain to be verified on Android.
+- **Accessibility:** status, risk and analysis text use polite accessibility live regions; the recipient field has a content description; transcript text is selectable. Touch targets have explicit minimum heights. Keyboard focus, selected-state announcements, large-font wrapping and actual contrast remain to be verified on Android.
 
 The legacy browser retains its own guide link, outlined secondary call actions, lime primary call actions, explicit incomplete-analysis alert, keyboard focus treatment and pressed mute state. These do not describe native widget behavior.
 

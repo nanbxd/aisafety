@@ -1,4 +1,4 @@
-# Android native calling — 0.6-push-calls
+# Skepticall for Android — 0.7-skepticall
 
 The launcher opens the native Kotlin call workspace directly. No WebView, JavaScript bridge,
 URL entry or browser dependency. Either participant can choose caller or receiver. The browser
@@ -23,16 +23,16 @@ unavailable state; the app does not guess a deployment address or ask users to p
 
 APK: [app-debug.apk](app/build/outputs/apk/debug/app-debug.apk).
 Tests: [testDebugUnitTest](app/build/reports/tests/testDebugUnitTest/index.html).
-Version code 6, version name `0.6-push-calls`. Firebase Android configuration is required at `app/google-services.json`; see [Firebase setup](../FIREBASE.md).
+Version code 7, version name `0.7-skepticall`. The launcher label and adaptive icon use the Skepticall identity. Firebase Android configuration is required at `app/google-services.json`; see [Firebase setup](../FIREBASE.md).
 
 ## First call
 
-1. Open the app; choose «Принимаю» or «Звоню».
-2. Share a room code using the Android share sheet. Both participants use that code and different roles.
-3. Both explicitly consent to Google processing, then enter the room. Grant microphone and notification permissions; the foreground service starts while the activity is visible.
-4. Caller presses «Позвонить». Receiver hears the system ringtone and answers in the app or the incoming notification.
+1. Open the app and save your number through «Мой номер». The number is only an in-app address; it is not verified by SMS and does not start a carrier call.
+2. The receiver explicitly consents to Google processing and enables incoming calls. Grant microphone and notification permissions; the foreground service starts while the activity is visible.
+3. The caller saves their own address, enters the receiver's number and presses «Позвонить».
+4. The receiver hears the system ringtone and answers in the app or the incoming notification.
 5. Receiver opens «Анализ» for remote speech, risk reasons and analysis availability.
-6. Home, Back, screen locking and recreation do not tear down the session. Return/end using the notification. «Выйти из комнаты» stops the service.
+6. Home, Back, screen locking and recreation do not tear down the session. Return/end using the notification. «Отключить входящие» stops the service.
 
 ## Native media and lifecycle
 
@@ -44,7 +44,7 @@ Single-use audio tickets remain in memory. Stale socket, SDP and PCM events are 
 session/call generations; the PCM queue is bounded. Permission continuations are bound to
 the original call. Microphone and audio routing are released on teardown.
 
-Foreground incoming calls use the joined session. FCM can deliver an incoming when the receiver socket is absent, after server credentials and the updated server are deployed. Reopen after force-stop; rejoin after server restart or the 24-hour registration expiry. Doze, vendor battery controls and network loss can interrupt availability. TURN may be required across mobile networks.
+Foreground incoming calls use the registered phone-address session. FCM can deliver an incoming when the receiver socket is absent, after server credentials and the updated server are deployed. Reopen after force-stop; enable incoming calls again after server restart or the 24-hour registration expiry. Doze, vendor battery controls and network loss can interrupt availability. TURN may be required across mobile networks.
 An analysis failure leaves the voice call running with an explicit incomplete/unavailable
 message; a signaling failure ends the call. Analysis is not a guarantee of safety.
 
@@ -87,7 +87,7 @@ Registrations expire after 24 hours and are lost on server restart in this singl
 - Notification answer, decline, hangup, caller cancellation and ring timeout all stop the ringtone.
 - A stale notification from a previous call cannot answer or end the next one.
 - Notification/microphone denial, full-screen denial, DND and silent mode have honest behavior.
-- Explicit room exit stops the service; force-stop requires launching and rejoining.
+- Explicitly disabling incoming calls stops the service; force-stop requires launching and enabling them again.
 
 No Android device/emulator was attached. Unit tests and compilation do not establish the
 above hardware behaviors. Test on the target Vivo/Android version before relying on them.

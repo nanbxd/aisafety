@@ -24,15 +24,15 @@
     <div class="connection-column">
       <form id="setup" class="setup-panel">
         <h2>Начнём с подключения</h2>
-        <p class="section-description">Одна комната для вас и собеседника.</p>
+        <p class="section-description">Номер становится адресом внутри Skepticall.</p>
         <label for="role">Что вы хотите сделать?</label>
         <select id="role"><option value="receiver">Принять звонок и включить анализ</option><option value="caller">Позвонить собеседнику</option></select>
-        <label for="room">Комната</label>
-        <div class="room-row"><input id="room" required minlength="8" maxlength="64" pattern="[A-Za-z0-9_\-]{8,64}" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="room-help" placeholder="Введите название комнаты"><button id="random-room" class="secondary" type="button">Новая</button></div>
-        <p id="room-help" class="hint">Введите одинаковую комнату на двух устройствах. 8–64 латинских букв, цифр, знаков _ или -.</p>
+        <label for="room">Номер адреса</label>
+        <div class="room-row"><input id="room" type="tel" required minlength="10" maxlength="24" pattern="(?:[0-9]|\+| |\(|\)|-){10,24}" autocomplete="tel" aria-describedby="room-help" placeholder="+7 701 123 45 67"></div>
+        <p id="room-help" class="hint">Для входящих укажите свой номер. Для исходящего — номер получателя.</p>
         <label class="consent"><input id="consent" type="checkbox" required aria-describedby="privacy-help"><span>Я и собеседник согласны на передачу голоса звонящего через сервер во внешний сервис Google Gemini Live для распознавания и анализа.</span></label>
         <details class="privacy"><summary>Что происходит с данными</summary><p id="privacy-help" class="hint">Демо — только с синтетической речью без личных и конфиденциальных данных. В бесплатном тарифе Google может использовать переданные данные для улучшения продуктов. Ответы Gemini голосом не воспроизводятся.</p></details>
-        <button id="connect" class="connect-button" type="submit">Подключиться к комнате <span aria-hidden="true">→</span></button>
+        <button id="connect" class="connect-button" type="submit">Подключить адрес <span aria-hidden="true">→</span></button>
       </form>
       <p id="joined-summary" class="joined-summary" hidden></p>
       <section class="call-panel" aria-labelledby="call-title">
@@ -56,7 +56,7 @@
       <p class="analysis-disclaimer">Анализ может ошибаться и пропускать угрозы. Низкий риск не гарантирует безопасность. Не сообщайте коды и пароли; проверяйте просьбы через официальный канал.</p>
     </section>
   </div>
-  <section id="how-it-works" class="guide" aria-labelledby="guide-title"><h2 id="guide-title">От комнаты — к разговору</h2><ol><li><strong>Соединитесь</strong><p>Передайте название комнаты собеседнику и выберите разные роли.</p></li><li><strong>Начните звонок</strong><p>Звонящий нажимает «Позвонить», принимающий — «Принять».</p></li><li><strong>Следите за разговором</strong><p>У принимающего появятся расшифровка и оценка риска.</p></li></ol></section>
+  <section id="how-it-works" class="guide" aria-labelledby="guide-title"><h2 id="guide-title">От номера — к разговору</h2><ol><li><strong>Укажите адрес</strong><p>Получатель подключает свой номер, звонящий вводит этот же номер.</p></li><li><strong>Начните звонок</strong><p>Звонящий нажимает «Позвонить», принимающий — «Принять».</p></li><li><strong>Следите за разговором</strong><p>У принимающего появятся расшифровка и оценка риска.</p></li></ol></section>
 </main>
 <footer><span>Skepticall</span><p>Технологии помогают. Решение остаётся за вами.</p><span>WebRTC · Google Gemini</span></footer>
 </body>

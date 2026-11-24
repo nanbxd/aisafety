@@ -1,4 +1,6 @@
 """Optional FCM HTTP v1 delivery. Credentials stay on the server."""
+import hashlib
+import json
 import os
 import threading
 
@@ -10,24 +12,33 @@ from server.diagnostics import log
 
 _lock = threading.Lock()
 _credentials = None
-_path = None
+_source = None
 
 
 def configured():
-    return bool(os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
+    return bool(os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON") or os.getenv("GOOGLE_APPLICATION_CREDENTIALS"))
 
 
 def send(token, data):
-    global _credentials, _path
+    global _credentials, _source
+    raw = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
     path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if not path:
+    if not raw and not path:
         return False
     try:
         with _lock:
-            if _credentials is None or _path != path:
-                _credentials = service_account.Credentials.from_service_account_file(
-                    path, scopes=["https://www.googleapis.com/auth/firebase.messaging"])
-                _path = path
+            source = ("json", hashlib.sha256(raw.encode()).hexdigest()) if raw else ("file", path)
+            if _credentials is None or _source != source:
+                if raw:
+                    info = json.loads(raw)
+                    if not isinstance(info, dict):
+                        raise ValueError("Firebase credentials must be a JSON object")
+                    _credentials = service_account.Credentials.from_service_account_info(
+                        info, scopes=["https://www.googleapis.com/auth/firebase.messaging"])
+                else:
+                    _credentials = service_account.Credentials.from_service_account_file(
+                        path, scopes=["https://www.googleapis.com/auth/firebase.messaging"])
+                _source = source
             if not _credentials.valid:
                 transport = Request()
                 _credentials.refresh(lambda **kwargs: transport(**{**kwargs, "timeout": 5}))

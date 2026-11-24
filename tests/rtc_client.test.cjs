@@ -8,12 +8,12 @@ const path = require('node:path');
 const { PcmResampler } = require('../server/static/rtc/pcm-core.js');
 const client = fs.readFileSync(path.join(__dirname, '../server/static/rtc/client.js'), 'utf8');
 
-test('HTML room pattern compiles in Unicode sets mode and enforces backend alphabet', () => {
+test('HTML phone pattern accepts formatted numbers and rejects invalid addresses', () => {
   const html = fs.readFileSync(path.join(__dirname, '../server/static/rtc/index.html'), 'utf8');
   const pattern = html.match(/id="room"[^>]*pattern="([^"]+)"/)[1];
-  const validRoom = new RegExp(`^(?:${pattern})$`, 'v');
-  for (const value of ['abcdefgh', 'Room_123-456', 'a'.repeat(64)]) assert.equal(validRoom.test(value), true);
-  for (const value of ['short', 'a'.repeat(65), 'комната123', 'room 1234', 'room/1234', 'room(1234)']) assert.equal(validRoom.test(value), false);
+  const validPhone = new RegExp(`^(?:${pattern})$`, 'v');
+  for (const value of ['+7 701 123 45 67', '87011234567', '+44 (7911) 123-456']) assert.equal(validPhone.test(value), true);
+  for (const value of ['123', 'call-me', '+7/701/123']) assert.equal(validPhone.test(value), false);
 });
 
 test('PCM is little-endian, bounded, mono and independent of input block boundaries', () => {
@@ -53,10 +53,10 @@ function harness(role = 'caller') {
   let resolveMic;
   let deferMic = false;
   const element = id => elements[id] ||= {
-    value: id === 'role' ? role : '', disabled: false, hidden: false, textContent: '', children: [], handlers: {}, srcObject: null,
+    value: id === 'role' ? role : id === 'room' ? '+7 701 123 45 67' : '', disabled: false, hidden: false, textContent: '', children: [], handlers: {}, srcObject: null,
     addEventListener(type, fn) { this.handlers[type] = fn; },
     setAttribute() {}, replaceChildren() { this.children = []; }, append(value) { this.children.push(value); },
-    reportValidity() { return true; }, focus() { this.focused = true; }, pause() {}, play() { return this.rejectPlayback ? Promise.reject(new Error('autoplay')) : Promise.resolve(); }
+    setCustomValidity(value) { this.validationMessage = value; }, reportValidity() { return true; }, focus() { this.focused = true; }, pause() {}, play() { return this.rejectPlayback ? Promise.reject(new Error('autoplay')) : Promise.resolve(); }
   };
   function stream() {
     const track = { kind: 'audio', enabled: true, stopped: false, stop() { this.stopped = true; } };
@@ -109,7 +109,7 @@ function harness(role = 'caller') {
   async function join(peer = true) {
     element('setup').handlers.submit({ preventDefault() {} });
     sockets[0].open();
-    sockets[0].event({ type: 'ready', role, room: element('room').value, ice_servers: [], peer_present: peer });
+    sockets[0].event({ type: 'ready', role, room: 'tel_77011234567', ice_servers: [], peer_present: peer });
     await tick();
   }
   return { elements, sockets, peers, tracks, contexts, nodes, sandbox, timers, tick, click, join, stream, listeners,
@@ -145,7 +145,7 @@ test('second-joining caller can invite; SDP precedes ICE; early ICE waits for re
   assert.equal(h.elements.invite.disabled, false);
 });
 
-test('joined UI hides setup, identifies room and role, focuses heading and restores on disconnect', async () => {
+test('joined UI hides setup, identifies address and role, focuses heading and restores on disconnect', async () => {
   const h = harness('receiver');
   h.elements.consent.checked = true;
   assert.equal(h.elements.setup.hidden, false);
