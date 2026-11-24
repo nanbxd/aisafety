@@ -102,6 +102,13 @@ class CallService : Service() {
             }
         } else if (started && CallNotificationState.validAction(intent?.getStringExtra(TOKEN), engine.actionToken)) {
             when (intent?.action) {
+                // Answer can also arrive via activity; handling it here makes notification
+                // CallStyle reliable when the activity is slow to resume or not in foreground.
+                ANSWER -> if (CallNotificationState.isIncoming(engine.state.role, engine.state.ringing)) {
+                    if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+                        engine.accept()
+                    }
+                }
                 DECLINE -> if (CallNotificationState.isIncoming(engine.state.role, engine.state.ringing)) engine.end("reject")
                 HANGUP -> engine.end()
                 LEAVE -> { pendingInvite = false; returnAddress = null; outgoingStarted = false; engine.leave() }
@@ -181,10 +188,19 @@ class CallService : Service() {
             .setPendingIntentCreatorBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED).toBundle() else null
         return PendingIntent.getActivity(this, if (action == ANSWER) 11 else 10, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE, options)
     }
-    private fun command(action: String): PendingIntent = PendingIntent.getService(this, 12,
-        Intent(this, CallService::class.java).setAction(action)
-            .setData(Uri.parse("safetyhack://call/${engine.actionToken}/$action"))
-            .putExtra(TOKEN, engine.actionToken), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    private fun command(action: String): PendingIntent {
+        val requestCode = when (action) {
+            ANSWER -> 12
+            DECLINE -> 13
+            HANGUP -> 14
+            LEAVE -> 15
+            else -> 16
+        }
+        return PendingIntent.getService(this, requestCode,
+            Intent(this, CallService::class.java).setAction(action)
+                .setData(Uri.parse("safetyhack://call/${engine.actionToken}/$action"))
+                .putExtra(TOKEN, engine.actionToken), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+    }
 
     private fun base(channel: String) = Notification.Builder(this, channel)
         .setSmallIcon(R.drawable.ic_call_notification)
@@ -199,13 +215,16 @@ class CallService : Service() {
             .setContentText("Собеседник ожидает ответа")
             .setCategory(Notification.CATEGORY_CALL)
             .setTimeoutAfter(70000)
+        // Answer goes to the service so accept works even when the activity is not resumed
+        // (OEM battery policies, lock screen). Decline stays on the service path too.
         if (Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), open(ANSWER)))
+            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), command(ANSWER)))
         } else {
             builder.addAction(Notification.Action.Builder(null, "Отклонить", command(DECLINE)).build())
-                .addAction(Notification.Action.Builder(null, "Ответить", open(ANSWER)).build())
+                .addAction(Notification.Action.Builder(null, "Ответить", command(ANSWER)).build())
         }
-        if (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()) builder.setFullScreenIntent(open(), true)
+        // Full-screen / tap still opens the activity so the user can see the call UI.
+        if (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()) builder.setFullScreenIntent(open(ANSWER), true)
         return builder.build().apply { flags = flags or Notification.FLAG_INSISTENT }
     }
 

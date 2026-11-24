@@ -136,9 +136,19 @@ class NativeRtcClient(context: Context, private val changed: () -> Unit) {
                 // A resumed receiver can observe the same call through the live socket and FCM path.
                 // Treat that delivery as idempotent instead of dropping the whole address session.
                 if (callId == incomingId && state.ringing) return
-                if (state.busy || callId != null) return
-                if (state.role == "receiver") beginCall()
-                callId = incomingId; state.ringing = true
+                if (callId != null) return
+                // Caller already called beginCall() in invite() and is busy with callId still null.
+                // Blocking on busy here dropped "incoming", so callId never bound and every later
+                // accepted/offer/answer/ice event was ignored — accept appeared to do nothing.
+                if (state.role == "receiver") {
+                    if (state.busy) return
+                    beginCall()
+                } else if (!state.busy) {
+                    // Protocol: caller only receives incoming after a local invite.
+                    return
+                }
+                callId = incomingId
+                state.ringing = true
                 // A manually reopened receiver may already have a push notification.
                 // The connected call service now owns ringing; suppress late duplicates.
                 if (state.role == "receiver") PushCalls.cancel(appContext, callId!!)
