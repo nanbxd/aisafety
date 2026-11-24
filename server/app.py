@@ -18,6 +18,8 @@ from server.diagnostics import log, error
 SAMPLE_RATE = 16000
 BYTES_PER_SECOND = SAMPLE_RATE * 2
 MAX_FRAME_BYTES = 16000
+IDLE_TIMEOUT_S = 20
+SESSION_LIMIT_S = 900
 
 
 def level(pcm: bytes) -> float:
@@ -28,6 +30,7 @@ def level(pcm: bytes) -> float:
 
 def create_app(analysis_backend=None, *, load_environment: bool = False) -> FastAPI:
     """Build an app; the deployment entry point opts into local dotenv loading."""
+
     @asynccontextmanager
     async def lifespan(app):
         if load_environment:
@@ -59,81 +62,166 @@ def create_app(analysis_backend=None, *, load_environment: bool = False) -> Fast
     async def audio(ws: WebSocket):
         await ws.accept()
         if app.state.busy:
-            await ws.send_json({"type": "error", "message": "Сервер занят другой сессией."})
-            await ws.close(code=1013)
+            with contextlib.suppress(Exception):
+                await ws.send_json(
+                    {"type": "error", "message": "Сервер занят другой сессией."}
+                )
+                await ws.close(code=1013)
             return
+
         app.state.busy = True
-        analysis = None
+        analysis: AudioAnalysis | None = None
+        closed = False
+
+        async def safe_close(code: int = 1000) -> None:
+            nonlocal closed
+            if closed:
+                return
+            closed = True
+            with contextlib.suppress(Exception):
+                await ws.close(code=code)
+
         try:
-            start = json.loads(await asyncio.wait_for(ws.receive_text(), timeout=10))
-            if not isinstance(start, dict) or any(start.get(k) != v for k, v in {
-                "type": "start", "sample_rate": 16000, "channels": 1, "format": "pcm_s16le"
-            }.items()) or start.get("language", "ru") not in {"ru", "kk", "en"}:
-                raise ValueError("Нужен start: PCM s16le, 16000 Hz, mono, язык ru/kk/en.")
+            try:
+                raw_start = await asyncio.wait_for(ws.receive_text(), timeout=10)
+                start = json.loads(raw_start)
+            except (TimeoutError, json.JSONDecodeError, TypeError) as exc:
+                raise ValueError(
+                    "Нужен start: PCM s16le, 16000 Hz, mono, язык ru/kk/en."
+                ) from exc
+
+            if (
+                not isinstance(start, dict)
+                or any(
+                    start.get(k) != v
+                    for k, v in {
+                        "type": "start",
+                        "sample_rate": 16000,
+                        "channels": 1,
+                        "format": "pcm_s16le",
+                    }.items()
+                )
+                or start.get("language", "ru") not in {"ru", "kk", "en"}
+            ):
+                raise ValueError(
+                    "Нужен start: PCM s16le, 16000 Hz, mono, язык ru/kk/en."
+                )
+
             language = start.get("language", "ru")
-            if app.state.analysis and (start.get("consent") is not True or start.get("analysis_provider") != "google"):
-                raise AnalysisError("consent_required", "Explicit consent to send audio to Google is required: consent=true, analysis_provider=google.")
+            if app.state.analysis and (
+                start.get("consent") is not True
+                or start.get("analysis_provider") != "google"
+            ):
+                raise AnalysisError(
+                    "consent_required",
+                    "Explicit consent to send audio to Google is required: "
+                    "consent=true, analysis_provider=google.",
+                )
+
             send_lock = asyncio.Lock()
 
-            async def emit(event):
+            async def emit(event: dict) -> None:
+                if closed:
+                    return
                 async with send_lock:
-                    await ws.send_json(event)
+                    try:
+                        await ws.send_json(event)
+                    except (WebSocketDisconnect, RuntimeError):
+                        # Client already gone; swallow so analysis can shut down cleanly.
+                        pass
 
             analysis = AudioAnalysis(app.state.analysis, emit, language)
             await analysis.start()
             await emit({"type": "ready", "mode": app.state.mode})
+
             total = 0
-            last_meter = 0
+            last_meter = 0.0
             received_at = time.monotonic()
             last_received = received_at
+
             while True:
+                # Propagate upstream failure as soon as the worker dies.
                 analysis.check()
+
                 try:
-                    frame = await asyncio.wait_for(ws.receive(), timeout=1)
+                    frame = await asyncio.wait_for(ws.receive(), timeout=1.0)
                 except TimeoutError:
-                    if time.monotonic() - last_received >= 20:
-                        raise
+                    if time.monotonic() - last_received >= IDLE_TIMEOUT_S:
+                        raise ValueError("Нет аудио дольше 20 секунд.")
                     continue
+
                 last_received = time.monotonic()
+
                 if frame["type"] == "websocket.disconnect":
                     break
+
                 raw = frame.get("bytes")
                 if raw is None:
-                    event = json.loads(frame.get("text") or "{}")
+                    try:
+                        event = json.loads(frame.get("text") or "{}")
+                    except json.JSONDecodeError as exc:
+                        raise ValueError("Ожидается бинарное аудио или stop.") from exc
                     if not isinstance(event, dict) or event.get("type") != "stop":
                         raise ValueError("Ожидается бинарное аудио или stop.")
                     await analysis.finish()
-                    await emit({"type": "done", "audio_seconds": round(total / BYTES_PER_SECOND, 2)})
-                    await ws.close(code=1000)
+                    await emit(
+                        {
+                            "type": "done",
+                            "audio_seconds": round(total / BYTES_PER_SECOND, 2),
+                        }
+                    )
+                    await safe_close(1000)
                     break
+
                 if not raw or len(raw) % 2 or len(raw) > MAX_FRAME_BYTES:
-                    raise ValueError("Некорректный PCM-пакет: нужен чётный размер 2–16000 байт.")
+                    raise ValueError(
+                        "Некорректный PCM-пакет: нужен чётный размер 2–16000 байт."
+                    )
+
                 total += len(raw)
                 elapsed = time.monotonic() - received_at
-                if total > BYTES_PER_SECOND * 900 or elapsed > 900:
+                if total > BYTES_PER_SECOND * SESSION_LIMIT_S or elapsed > SESSION_LIMIT_S:
                     raise ValueError("Лимит тестовой сессии: 15 минут.")
                 if total > BYTES_PER_SECOND * (elapsed * 1.5 + 10):
                     raise ValueError("Аудио поступает быстрее реального времени.")
-                if time.monotonic() - last_meter >= 0.25:
+
+                now = time.monotonic()
+                if now - last_meter >= 0.25:
                     db = level(raw)
-                    await emit({"type": "level", "dbfs": db, "silent": db < -55,
-                                "audio_seconds": round(total / BYTES_PER_SECOND, 2)})
-                    last_meter = time.monotonic()
+                    await emit(
+                        {
+                            "type": "level",
+                            "dbfs": db,
+                            "silent": db < -55,
+                            "audio_seconds": round(total / BYTES_PER_SECOND, 2),
+                        }
+                    )
+                    last_meter = now
+
                 analysis.feed(raw)
+
         except WebSocketDisconnect:
             pass
         except Exception as exc:
             error("AUDIO_FAILED", exc)
-            message = str(exc) if isinstance(exc, AnalysisError) else "Invalid audio or processing failure."
+            code = "invalid_audio"
+            message = "Invalid audio or processing failure."
+            if isinstance(exc, AnalysisError):
+                code = exc.code
+                message = str(exc)
             with contextlib.suppress(Exception):
-                await ws.send_json({"type": "error", "code": exc.code if isinstance(exc, AnalysisError) else "invalid_audio", "message": message})
-                await ws.close(code=1011)
+                if not closed:
+                    await ws.send_json(
+                        {"type": "error", "code": code, "message": message}
+                    )
+            await safe_close(1011)
         finally:
             try:
-                if analysis:
+                if analysis is not None:
                     await analysis.close()
             finally:
                 app.state.busy = False
+                await safe_close()
 
     return app
 
