@@ -19,6 +19,9 @@ import android.widget.*
 
 /** Native Android call workspace. No browser, URL field, or JavaScript bridge. */
 class RtcActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
     companion object { val audioSessionOpen get() = CallRuntime.sessionOpen }
     private val engine get() = CallRuntime.client(this)
     private val stateObserver: () -> Unit = { render() }
@@ -92,7 +95,8 @@ class RtcActivity : Activity() {
         }
         brand = text("Skepticall", 24f, secondary).apply { icon(this, "logo", secondary) }
         top.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
-        top.addView(button("Мой номер", false) { showAddressSettings() })
+        top.addView(button(getString(R.string.my_number), false) { showAddressSettings() })
+        top.addView(button(getString(R.string.language), false) { showLanguagePicker() })
         root.addView(top)
         scroll = ScrollView(this).apply { isFillViewport = true; clipToPadding = false }
         content = LinearLayout(this).apply {
@@ -103,16 +107,16 @@ class RtcActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         callPane = column(content)
         setup = column(callPane)
-        setup.addView(text("Ближе друг к другу.\nСпокойнее в разговоре.", 32f, ink).apply { setLineSpacing(dp(2).toFloat(), 1f) })
-        setup.addView(text("Звонки с вниманием к вашей безопасности.", 16f, secondary).apply { setPadding(0, dp(12), 0, dp(32)) })
-        setup.addView(text("Ваш адрес", 18f, ink, true))
+        setup.addView(text(getString(R.string.hero_title), 32f, ink).apply { setLineSpacing(dp(2).toFloat(), 1f) })
+        setup.addView(text(getString(R.string.hero_subtitle), 16f, secondary).apply { setPadding(0, dp(12), 0, dp(32)) })
+        setup.addView(text(getString(R.string.your_address), 18f, ink, true))
         ownAddress = text("", 20f, primary, true).apply { setPadding(0, dp(8), 0, dp(24)) }
         setup.addView(ownAddress)
-        setup.addView(text("Кому позвонить", 18f, ink, true).apply { setPadding(0, 0, 0, dp(4)) })
-        setup.addView(text("Введите номер, который человек указал в своём приложении.", 14f, secondary))
+        setup.addView(text(getString(R.string.who_to_call), 18f, ink, true).apply { setPadding(0, 0, 0, dp(4)) })
+        setup.addView(text(getString(R.string.who_to_call_hint), 14f, secondary))
         target = EditText(this).apply {
             textSize = 20f; setTextColor(ink); setHintTextColor(secondary)
-            setSingleLine(); hint = "+7 701 123 45 67"; contentDescription = "Номер получателя"
+            setSingleLine(); hint = "+7 701 123 45 67"; contentDescription = getString(R.string.recipient_number_cd)
             inputType = android.text.InputType.TYPE_CLASS_PHONE
             background = rounded(surface, 8).apply { setStroke(dp(1), secondary) }
             setPadding(dp(16), dp(12), dp(16), dp(12))
@@ -126,14 +130,14 @@ class RtcActivity : Activity() {
             override fun afterTextChanged(s: Editable?) = Unit
         })
         consent = CheckBox(this).apply {
-            text = "Все участники согласны на передачу речи собеседника в Google Gemini для распознавания и анализа."
+            text = getString(R.string.consent_text)
             textSize = 14f; setTextColor(secondary); buttonTintList = ColorStateList.valueOf(primary)
             minHeight = dp(56); isSaveEnabled = false; setPadding(0, dp(16), 0, dp(16))
         }
         setup.addView(consent)
-        invite = button("Новый звонок", true) { dialAddress() }.apply { icon(this, "phone", onPrimary) }
+        invite = button(getString(R.string.new_call), true) { dialAddress() }.apply { icon(this, "phone", onPrimary) }
         setup.addView(invite, spaced())
-        connect = button("Включить входящие", false) { enableIncoming() }
+        connect = button(getString(R.string.enable_incoming), false) { enableIncoming() }
         setup.addView(connect, spaced())
         summary = text("", 16f, primary, true)
         callPane.addView(summary, spaced())
@@ -147,44 +151,44 @@ class RtcActivity : Activity() {
             importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
         statusRow.addView(statusDot, LinearLayout.LayoutParams(dp(10), dp(10)).apply { marginEnd = dp(12) })
-        status = text("Готовы к разговору", 22f, callInk, true).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        status = text(getString(R.string.ready_to_talk), 22f, callInk, true).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         statusRow.addView(status, LinearLayout.LayoutParams(0, -2, 1f))
         avatar = CallAvatar(this)
         live.addView(avatar, LinearLayout.LayoutParams(dp(176), dp(176)).apply { gravity = Gravity.CENTER_HORIZONTAL; topMargin = dp(32); bottomMargin = dp(28) })
-        sceneTitle = text("Здесь начинается разговор", 24f, callInk).apply { gravity = Gravity.CENTER }
+        sceneTitle = text(getString(R.string.scene_idle_title), 24f, callInk).apply { gravity = Gravity.CENTER }
         live.addView(sceneTitle, LinearLayout.LayoutParams(-1, -2))
-        sceneDescription = text("Позвоните, и помощник будет рядом", 14f, callSecondary).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(16)) }
+        sceneDescription = text(getString(R.string.scene_idle_desc), 14f, callSecondary).apply { gravity = Gravity.CENTER; setPadding(0, dp(12), 0, dp(16)) }
         live.addView(sceneDescription, LinearLayout.LayoutParams(-1, -2))
         dock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)); setBackgroundColor(color("#202124")) }
-        accept = button("Принять звонок", true) { withMicrophone { engine.accept() } }.apply { icon(this, "phone", onPrimary) }; dock.addView(accept, spaced())
-        reject = button("Отклонить", false) { engine.end("reject") }.apply { setTextColor(color("#F28B82")); background = rounded(color("#3C4043"), 28) }; dock.addView(reject, spaced())
+        accept = button(getString(R.string.accept_call), true) { withMicrophone { engine.accept() } }.apply { icon(this, "phone", onPrimary) }; dock.addView(accept, spaced())
+        reject = button(getString(R.string.decline), false) { engine.end("reject") }.apply { setTextColor(color("#F28B82")); background = rounded(color("#3C4043"), 28) }; dock.addView(reject, spaced())
         val controls = row(dock)
-        mute = button("Микрофон", false) { engine.toggleMute() }; equal(controls, mute)
-        speaker = button("Динамик", false) { engine.toggleSpeaker() }; equal(controls, speaker)
-        hangup = button("", false) { engine.end() }.apply { contentDescription = "Завершить звонок"; background = rounded(color("#EA4335"), 28); setTextColor(Color.WHITE); icon(this, "hangup", Color.WHITE) }
+        mute = button(getString(R.string.microphone), false) { engine.toggleMute() }; equal(controls, mute)
+        speaker = button(getString(R.string.speaker), false) { engine.toggleSpeaker() }; equal(controls, speaker)
+        hangup = button("", false) { engine.end() }.apply { contentDescription = getString(R.string.end_call_cd); background = rounded(color("#EA4335"), 28); setTextColor(Color.WHITE); icon(this, "hangup", Color.WHITE) }
         equal(controls, hangup)
         lobbyExtras = column(callPane)
-        disconnect = button("Отключить входящие", false) {
+        disconnect = button(getString(R.string.disable_incoming), false) {
             val own = ownAddressKey()
             if (engine.state.role == "caller" && own != null) CallService.join(this, own, "receiver") else engine.leave()
         }; lobbyExtras.addView(disconnect, spaced())
-        lobbyExtras.addView(text("Можно свернуть приложение: входящие продолжат приходить с рингтоном. После исходящего вызова Skepticall автоматически вернётся на ваш адрес.", 14f, secondary).apply { setPadding(0, dp(16), 0, dp(8)) })
-        lobbyExtras.addView(button("Настройки входящих звонков", false) { incomingSettings() }, spaced())
-        lobbyExtras.addView(button("Как это работает", false) { showHelp() }, spaced())
+        lobbyExtras.addView(text(getString(R.string.lobby_hint), 14f, secondary).apply { setPadding(0, dp(16), 0, dp(8)) })
+        lobbyExtras.addView(button(getString(R.string.incoming_settings_btn), false) { incomingSettings() }, spaced())
+        lobbyExtras.addView(button(getString(R.string.how_it_works), false) { showHelp() }, spaced())
         analysisPane = column(content)
-        analysisPane.addView(text("Анализ разговора", 28f, ink))
-        analysisPane.addView(text("Сигналы риска и расшифровка речи собеседника", 16f, secondary).apply { setPadding(0, dp(8), 0, dp(28)) })
+        analysisPane.addView(text(getString(R.string.analysis_title), 28f, ink))
+        analysisPane.addView(text(getString(R.string.analysis_subtitle), 16f, secondary).apply { setPadding(0, dp(8), 0, dp(28)) })
         risk = text("", 20f, ink, true).apply { background = rounded(tonal, 20); setPadding(dp(24), dp(24), dp(24), dp(24)); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         analysisPane.addView(risk, spaced())
         analysis = text("", 15f, secondary).apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
         analysisPane.addView(analysis, spaced())
-        analysisPane.addView(text("Речь собеседника", 22f, ink, true).apply { setPadding(0, dp(28), 0, dp(16)) })
+        analysisPane.addView(text(getString(R.string.peer_speech), 22f, ink, true).apply { setPadding(0, dp(28), 0, dp(16)) })
         transcript = text("", 18f, ink).apply { setTextIsSelectable(true); setLineSpacing(dp(6).toFloat(), 1f) }
         analysisPane.addView(transcript, spaced())
-        analysisPane.addView(text("Модель может ошибаться. Не сообщайте коды и пароли; проверяйте просьбы через официальный канал.", 14f, secondary).apply { setPadding(0, dp(32), 0, dp(8)) })
+        analysisPane.addView(text(getString(R.string.analysis_disclaimer), 14f, secondary).apply { setPadding(0, dp(32), 0, dp(8)) })
         nav = LinearLayout(this).apply { setPadding(dp(16), dp(10), dp(16), dp(10)); setBackgroundColor(surface); minimumHeight = dp(72); elevation = dp(8).toFloat() }
-        callsTab = button("Разговор", false) { currentTab = 0; render(); scroll.scrollTo(0, 0) }; equal(nav, callsTab)
-        analysisTab = button("Анализ", false) { currentTab = 1; render(); scroll.scrollTo(0, 0) }; equal(nav, analysisTab)
+        callsTab = button(getString(R.string.tab_conversation), false) { currentTab = 0; render(); scroll.scrollTo(0, 0) }; equal(nav, callsTab)
+        analysisTab = button(getString(R.string.tab_analysis), false) { currentTab = 1; render(); scroll.scrollTo(0, 0) }; equal(nav, analysisTab)
         root.addView(dock)
         root.addView(nav)
         setContentView(root)
@@ -215,7 +219,7 @@ class RtcActivity : Activity() {
         val ownNumber = ownNumber()
         val ownKey = ownAddressKey()
         val targetKey = PhoneAddress.key(target.text.toString())
-        ownAddress.text = ownNumber ?: "Не настроен — нажмите «Мой номер»"
+        ownAddress.text = ownNumber ?: getString(R.string.address_not_set)
         val onCall = s.busy || s.ringing || s.inCall
         setup.visibility = if (onCall) View.GONE else View.VISIBLE
         lobbyExtras.visibility = if (onCall) View.GONE else View.VISIBLE
@@ -241,32 +245,32 @@ class RtcActivity : Activity() {
         }
         avatar.showState(face)
         sceneTitle.text = when (face) {
-            "high" -> "Возможное мошенничество"
-            "medium" -> "Стоит проверить просьбу"
-            "low" -> "Явных признаков не отмечено"
-            "unavailable" -> "Анализ недоступен"
-            "ringing" -> "Ожидаем собеседника"
-            "listening" -> "Слушаем вместе с вами"
-            else -> "Здесь начинается разговор"
+            "high" -> getString(R.string.scene_high_title)
+            "medium" -> getString(R.string.scene_medium_title)
+            "low" -> getString(R.string.scene_low_title)
+            "unavailable" -> getString(R.string.scene_unavailable_title)
+            "ringing" -> getString(R.string.scene_ringing_title)
+            "listening" -> getString(R.string.scene_listening_title)
+            else -> getString(R.string.scene_idle_title)
         }
         sceneDescription.text = when {
-            face == "high" -> "Не сообщайте коды и пароли. Проверьте, кто вам звонит."
-            face == "medium" -> "Не торопитесь. Уточните просьбу через официальный канал."
-            face == "low" -> "Это не гарантия безопасности. Будьте внимательны."
-            face == "unavailable" -> "Разговор продолжается без проверки."
-            s.inCall && s.role != "receiver" -> "Анализ доступен принимающему участнику."
-            face == "listening" -> "Оценки пока нет. Продолжайте разговор."
-            face == "ringing" -> "Помощник подключится после начала разговора"
-            else -> "Позвоните, и помощник будет рядом"
+            face == "high" -> getString(R.string.scene_high_desc)
+            face == "medium" -> getString(R.string.scene_medium_desc)
+            face == "low" -> getString(R.string.scene_low_desc)
+            face == "unavailable" -> getString(R.string.scene_unavailable_desc)
+            s.inCall && s.role != "receiver" -> getString(R.string.scene_caller_desc)
+            face == "listening" -> getString(R.string.scene_listening_desc)
+            face == "ringing" -> getString(R.string.scene_ringing_desc)
+            else -> getString(R.string.scene_idle_desc_long)
         }
         summary.visibility = if (s.connected) View.VISIBLE else View.GONE
-        summary.text = if (s.role == "caller") "Звоним на ${PhoneAddress.display(s.room)}" else "Ваш адрес ${ownNumber ?: PhoneAddress.display(s.room)}"
+        summary.text = if (s.role == "caller") getString(R.string.calling_to, PhoneAddress.display(s.room)) else getString(R.string.your_address_is, ownNumber ?: PhoneAddress.display(s.room))
         connect.visibility = if (s.connected && s.role == "receiver") View.GONE else View.VISIBLE
         connect.isEnabled = ownKey != null && !s.connecting && !s.busy
         connect.text = when {
-            s.connecting -> "Подключение…"
-            s.connected && s.role == "caller" -> "Вернуться на свой адрес"
-            else -> "Включить входящие"
+            s.connecting -> getString(R.string.connecting)
+            s.connected && s.role == "caller" -> getString(R.string.return_to_own)
+            else -> getString(R.string.enable_incoming)
         }
         target.isEnabled = !s.connecting && !s.busy
         consent.isEnabled = !s.connecting && !s.busy
@@ -278,7 +282,7 @@ class RtcActivity : Activity() {
         mute.visibility = if (s.inCall) View.VISIBLE else View.GONE
         speaker.visibility = mute.visibility
         mute.text = ""
-        mute.contentDescription = if (s.muted) "Включить микрофон" else "Выключить микрофон"
+        mute.contentDescription = if (s.muted) getString(R.string.mic_unmute_cd) else getString(R.string.mic_mute_cd)
         mute.background = rounded(color(if (s.muted) "#F9DEDC" else "#3C4043"), 28)
         mute.setTextColor(color(if (s.muted) "#601410" else "#E8EAED"))
         icon(mute, if (s.muted) "mic-off" else "mic", color(if (s.muted) "#601410" else "#E8EAED"))
@@ -286,12 +290,12 @@ class RtcActivity : Activity() {
         speaker.setTextColor(callInk)
         icon(speaker, "speaker", callInk)
         speaker.text = ""
-        speaker.contentDescription = if (s.speaker) "Переключить на наушник" else "Включить динамик"
+        speaker.contentDescription = if (s.speaker) getString(R.string.speaker_earpiece_cd) else getString(R.string.speaker_on_cd)
         hangup.visibility = if (s.busy && !(s.ringing && s.role == "receiver")) View.VISIBLE else View.GONE
         disconnect.visibility = if (((s.connected || s.connecting) && s.role == "receiver") || (!s.connected && PushCalls.enabled(this))) View.VISIBLE else View.GONE
-        disconnect.text = "Отключить входящие"
+        disconnect.text = getString(R.string.disable_incoming)
         analysis.text = s.analysis
-        transcript.text = s.transcript.ifBlank { "Здесь появятся слова собеседника. Анализ доступен принимающему участнику после ответа на звонок." }
+        transcript.text = s.transcript.ifBlank { getString(R.string.transcript_placeholder) }
         risk.text = s.risk
         risk.setTextColor(if (s.riskLevel == "high") color(if (dark) "#FFB4AB" else "#B3261E") else ink)
         callPane.visibility = if (currentTab == 0) View.VISIBLE else View.GONE
@@ -301,11 +305,11 @@ class RtcActivity : Activity() {
     private fun enableIncoming() {
         val own = ownAddressKey()
         if (own == null) { showAddressSettings(); return }
-        if (!consent.isChecked) { status.text = "Подтвердите согласие участников на анализ речи."; return }
-        if (CaptureState.current.active) { status.text = "Сначала остановите запись микрофона."; return }
+        if (!consent.isChecked) { status.text = getString(R.string.need_consent); return }
+        if (CaptureState.current.active) { status.text = getString(R.string.stop_mic_first); return }
         prepareBackgroundSession {
             runCatching { CallService.join(this, own, "receiver") }
-                .onFailure { status.text = "Не удалось включить входящие. Проверьте разрешения и повторите." }
+                .onFailure { status.text = getString(R.string.enable_incoming_failed) }
         }
     }
     private fun dialAddress() {
@@ -313,14 +317,14 @@ class RtcActivity : Activity() {
         if (own == null) { showAddressSettings(); return }
         val entered = target.text.toString()
         val destination = PhoneAddress.key(entered)
-        if (destination == null) { target.error = "Введите номер от 10 до 15 цифр"; return }
-        if (destination == own) { target.error = "Нельзя позвонить на собственный адрес"; return }
-        if (!consent.isChecked) { status.text = "Подтвердите согласие участников на анализ речи."; return }
-        if (CaptureState.current.active) { status.text = "Сначала остановите запись микрофона."; return }
+        if (destination == null) { target.error = getString(R.string.invalid_number); return }
+        if (destination == own) { target.error = getString(R.string.cannot_call_self); return }
+        if (!consent.isChecked) { status.text = getString(R.string.need_consent); return }
+        if (CaptureState.current.active) { status.text = getString(R.string.stop_mic_first); return }
         addressPrefs().edit().putString("last_target", PhoneAddress.normalize(entered)).apply()
         prepareBackgroundSession {
             runCatching { CallService.join(this, destination, "caller", homeAddress = own, autoInvite = true) }
-                .onFailure { status.text = "Не удалось начать звонок. Проверьте разрешения и повторите." }
+                .onFailure { status.text = getString(R.string.start_call_failed) }
         }
     }
     private fun addressPrefs() = getSharedPreferences("phone_address", MODE_PRIVATE)
@@ -340,7 +344,7 @@ class RtcActivity : Activity() {
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         if (permissions.isEmpty()) {
             if (getSystemService(android.app.NotificationManager::class.java).areNotificationsEnabled()) action()
-            else { status.text = "Разрешите уведомления в настройках входящих, чтобы не пропускать звонки."; incomingSettings() }
+            else { status.text = getString(R.string.need_notifications); incomingSettings() }
         } else {
             pendingAction = action
             requestPermissions(permissions.toTypedArray(), 21)
@@ -352,16 +356,16 @@ class RtcActivity : Activity() {
             val action = pendingAction; pendingAction = null
             if (results.isNotEmpty() && results.all { it == PackageManager.PERMISSION_GRANTED }) {
                 if (resumed) action?.invoke() else resumeAction = action
-            } else status.text = if (code == 21) "Для фоновых звонков разрешите микрофон и уведомления. Затем войдите снова." else "Разрешите микрофон, чтобы говорить. Затем повторите действие."
+            } else status.text = if (code == 21) getString(R.string.need_mic_notif_bg) else getString(R.string.need_mic_permission)
         }
     }
     private fun incomingSettings() {
-        val builder = android.app.AlertDialog.Builder(this).setTitle("Входящие звонки")
-            .setMessage("Разрешите уведомления, звук и показ на экране блокировки. В беззвучном режиме и режиме «Не беспокоить» звонок подчиняется настройкам телефона.\n\nПосле принудительной остановки приложения нужно открыть его и снова включить входящие.")
-            .setPositiveButton("Уведомления") { _, _ ->
+        val builder = android.app.AlertDialog.Builder(this).setTitle(getString(R.string.incoming_settings_title))
+            .setMessage(getString(R.string.incoming_settings_msg))
+            .setPositiveButton(getString(R.string.notifications)) { _, _ ->
                 startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
-            }.setNegativeButton("Закрыть", null)
-        if (Build.VERSION.SDK_INT >= 34) builder.setNeutralButton("Поверх блокировки") { _, _ ->
+            }.setNegativeButton(getString(R.string.close), null)
+        if (Build.VERSION.SDK_INT >= 34) builder.setNeutralButton(getString(R.string.over_lockscreen)) { _, _ ->
             startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, android.net.Uri.parse("package:$packageName")))
         }
         builder.show()
@@ -389,7 +393,7 @@ class RtcActivity : Activity() {
             val call = intent.getStringExtra("call_id") ?: return
             val expires = intent.getLongExtra("expires_at", 0)
             if (!PushCalls.pending(this, code, call) || expires <= System.currentTimeMillis()) {
-                PushCalls.cancel(this, call); status.text = "Вызов уже завершён"; return
+                PushCalls.cancel(this, call); status.text = getString(R.string.call_already_ended); return
             }
             val acceptPush: () -> Unit = {
                 prepareBackgroundSession {
@@ -398,15 +402,15 @@ class RtcActivity : Activity() {
                         if (engine.state.ringing && engine.state.room == code) engine.acceptExpected(call)
                         else if (!engine.state.connected && !engine.state.connecting) {
                             runCatching { CallService.join(this, code, "receiver", call) }
-                                .onFailure { status.text = "Не удалось принять звонок. Повторите вход." }
+                                .onFailure { status.text = getString(R.string.accept_failed) }
                         }
                     }
                 }
             }
             if (answer) acceptPush() else android.app.AlertDialog.Builder(this)
-                .setTitle("Входящий звонок Skepticall").setMessage("Ответить собеседнику?")
-                .setPositiveButton("Ответить") { _, _ -> acceptPush() }
-                .setNegativeButton("Отклонить") { _, _ -> PushCalls.reject(this, code, call) }.show()
+                .setTitle(getString(R.string.incoming_call_title)).setMessage(getString(R.string.answer_peer))
+                .setPositiveButton(getString(R.string.answer)) { _, _ -> acceptPush() }
+                .setNegativeButton(getString(R.string.decline)) { _, _ -> PushCalls.reject(this, code, call) }.show()
             return
         }
         if (intent?.action != CallService.ANSWER) return
@@ -415,7 +419,7 @@ class RtcActivity : Activity() {
         if (CallNotificationState.validAction(token, engine.actionToken) && engine.state.ringing && engine.state.role == "receiver") withMicrophone { engine.accept() }
     }
     private fun showAddressSettings() {
-        if (engine.state.busy) { status.text = "Завершите текущий звонок перед сменой номера."; return }
+        if (engine.state.busy) { status.text = getString(R.string.finish_current_first); return }
         val input = EditText(this).apply {
             inputType = android.text.InputType.TYPE_CLASS_PHONE
             hint = "+7 701 123 45 67"
@@ -423,16 +427,16 @@ class RtcActivity : Activity() {
             setSelection(text.length)
         }
         val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle("Ваш номер в Skepticall")
-            .setMessage("Номер используется только как адрес внутри приложения. SMS-подтверждения и обычного телефонного вызова нет.")
+            .setTitle(getString(R.string.your_number_title))
+            .setMessage(getString(R.string.your_number_msg))
             .setView(input)
-            .setPositiveButton("Сохранить", null)
-            .setNegativeButton("Отмена", null)
+            .setPositiveButton(getString(R.string.save), null)
+            .setNegativeButton(getString(R.string.cancel), null)
             .create()
         dialog.setOnShowListener {
             dialog.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val normalized = PhoneAddress.normalize(input.text.toString())
-                if (normalized == null) input.error = "Введите номер от 10 до 15 цифр"
+                if (normalized == null) input.error = getString(R.string.invalid_number)
                 else {
                     addressPrefs().edit().putString("own_number", normalized).apply()
                     ownAddress.text = normalized
@@ -441,7 +445,7 @@ class RtcActivity : Activity() {
                         CallService.join(this, address, "receiver")
                     }
                     render()
-                    status.text = "Адрес сохранён. Включите входящие."
+                    status.text = getString(R.string.address_saved)
                     dialog.dismiss()
                 }
             }
@@ -449,14 +453,33 @@ class RtcActivity : Activity() {
         dialog.show()
     }
     private fun showHelp() {
-        android.app.AlertDialog.Builder(this).setTitle("Звонок в три шага")
-            .setMessage("Укажите свой номер в настройках и включите входящие.\n\nВведите номер пользователя Skepticall и нажмите «Позвонить». Получатель увидит входящий вызов и сможет ответить.\n\nВо вкладке «Анализ» получатель видит речь и предупреждения. Это помощь, а не гарантия безопасности.")
-            .setPositiveButton("Понятно", null)
-            .setNeutralButton("Проверить микрофон") { _, _ -> startActivity(Intent(this, MainActivity::class.java)) }.show()
+        android.app.AlertDialog.Builder(this).setTitle(getString(R.string.help_title))
+            .setMessage(getString(R.string.help_msg))
+            .setPositiveButton(getString(R.string.got_it), null)
+            .setNeutralButton(getString(R.string.check_microphone)) { _, _ -> startActivity(Intent(this, MainActivity::class.java)) }.show()
     }
     override fun onSaveInstanceState(out: Bundle) { out.putString("target", target.text.toString()); super.onSaveInstanceState(out) }
     override fun onStop() { CallRuntime.remove(stateObserver); super.onStop() }
     override fun onDestroy() { pendingAction = null; resumeAction = null; super.onDestroy() }
+
+    private fun showLanguagePicker() {
+        val codes = LocaleHelper.allOptions()
+        val labels = codes.map { LocaleHelper.displayName(it, this) }.toTypedArray()
+        val current = LocaleHelper.preferredCode(this)
+        val checked = codes.indexOf(current).coerceAtLeast(0)
+        android.app.AlertDialog.Builder(this)
+            .setTitle(getString(R.string.choose_language))
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                val selected = codes[which]
+                dialog.dismiss()
+                if (selected != current) {
+                    LocaleHelper.applyAndRecreate(this, selected)
+                }
+            }
+            .setNegativeButton(getString(R.string.cancel), null)
+            .show()
+    }
+
     private fun color(hex: String) = Color.parseColor(hex)
     private fun dp(n: Int) = (resources.displayMetrics.density * n).toInt()
     private fun rounded(value: Int, radius: Int) = GradientDrawable().apply { setColor(value); cornerRadius = dp(radius).toFloat() }

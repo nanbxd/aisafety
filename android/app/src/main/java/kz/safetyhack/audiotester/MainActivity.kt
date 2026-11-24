@@ -15,6 +15,9 @@ import java.net.URI
 import java.util.Locale
 
 class MainActivity : Activity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
     private lateinit var source: Spinner
     private lateinit var endpoint: EditText
     private lateinit var consent: CheckBox
@@ -76,7 +79,7 @@ class MainActivity : Activity() {
         stop = button("Остановить запись") {
             if (CaptureState.current.active) startService(Intent(this, CaptureService::class.java).setAction("STOP"))
         }
-        replay = button("Прослушать запись") { play() }
+        replay = button(getString(R.string.mic_replay)) { play() }
         delete = button("Удалить запись") { deleteRecording() }
         label("Передача на сервер — по желанию", 20f)
         label("Без передачи запись остаётся на телефоне. Включайте передачу только с согласия всех участников. Используйте защищённое соединение wss://.")
@@ -167,9 +170,9 @@ class MainActivity : Activity() {
         val recording = File(filesDir, "latest-test.wav")
         val deleted = runCatching { !recording.exists() || recording.delete() }.getOrDefault(false)
         if (deleted) {
-            CaptureState.update { it.copy(wav = null, status = "Запись удалена с телефона") }
+            CaptureState.update { it.copy(wav = null, status = getString(R.string.mic_deleted)) }
         } else {
-            Toast.makeText(this, "Не удалось удалить запись. Попробуйте снова.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.mic_delete_failed), Toast.LENGTH_LONG).show()
         }
         render()
     }
@@ -181,19 +184,19 @@ class MainActivity : Activity() {
         start.isEnabled = !busy; stop.isEnabled = state.active
         replay.isEnabled = !busy && state.wav != null
         delete.isEnabled = !busy && (state.wav != null || File(filesDir, "latest-test.wav").exists())
-        replay.text = if (player != null) "Остановить прослушивание" else "Прослушать запись"
+        replay.text = if (player != null) getString(R.string.mic_stop_replay) else getString(R.string.mic_replay)
         source.isEnabled = !busy; endpoint.isEnabled = !busy; consent.isEnabled = !busy
-        status.text = if (starting) "Подготовка к записи…" else state.status
+        status.text = if (starting) getString(R.string.mic_preparing) else state.status
         meter.progress = (state.db + 90).toInt().coerceIn(0, 90)
-        meterText.text = String.format(Locale.forLanguageTag("ru-RU"), "Уровень: %.1f дБFS · %d из 30 секунд", state.db, state.seconds)
+        meterText.text = String.format(Locale.forLanguageTag("ru-RU"), getString(R.string.mic_level), state.db, state.seconds)
         if (state.active && state.db < -55) {
-            meterText.append("\nТишина: возможна блокировка микрофона")
+            meterText.append("\n" + getString(R.string.mic_silence_hint))
         }
         network.text = listOf(state.network, state.serverMode).filter { it.isNotBlank() }.joinToString("\n")
-        val noTranscript = if (state.diagnostic) "В режиме диагностики речь не распознаётся" else "Пока нет распознанной речи"
-        val noRisk = if (state.diagnostic) "В режиме диагностики оценка риска недоступна" else "Оценка ещё не получена"
+        val noTranscript = if (state.diagnostic) getString(R.string.mic_diagnostic_no_speech) else getString(R.string.mic_no_transcript)
+        val noRisk = if (state.diagnostic) getString(R.string.mic_diagnostic_no_risk) else getString(R.string.mic_no_risk)
         results.text = listOf("Речь: ${state.transcript.ifBlank { noTranscript }}",
-            "Риск: ${state.risk.ifBlank { noRisk }}", "Звук на сервере: ${state.serverLevel.ifBlank { "Данных пока нет" }}").joinToString("\n\n")
+            "Риск: ${state.risk.ifBlank { noRisk }}", "Звук на сервере: ${state.serverLevel.ifBlank { getString(R.string.mic_no_server_data) }}").joinToString("\n\n")
     }
     override fun onResume() { super.onResume(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); releasePlayer(); super.onPause() }

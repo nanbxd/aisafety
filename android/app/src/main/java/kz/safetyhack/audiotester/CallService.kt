@@ -57,7 +57,7 @@ class CallService : Service() {
             setSound(null, null)
         })
         notifications.createNotificationChannel(NotificationChannel(INCOMING_CHANNEL, "Входящие звонки", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "Рингтон и кнопки ответа на входящий вызов"
+            description = getString(R.string.notif_channel_incoming_desc)
             setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE), AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
             enableVibration(true)
@@ -79,7 +79,7 @@ class CallService : Service() {
                 check(checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
                 check(notifications.areNotificationsEnabled())
                 if (!started) {
-                    val notification = sessionNotification("Подключаем адрес…")
+                    val notification = sessionNotification(getString(R.string.status_connecting_address))
                     // Declare microphone access while the app is visible, before it can move to the background.
                     if (Build.VERSION.SDK_INT >= 29) startForeground(SESSION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
                     else startForeground(SESSION_ID, notification)
@@ -97,7 +97,7 @@ class CallService : Service() {
                 switchSession(room, role, intent.getStringExtra("resume_call"))
                 update()
             } catch (_: Exception) {
-                engine.disconnect("Не удалось включить фоновый режим. Разрешите микрофон и уведомления, затем повторите вход из приложения.")
+                engine.disconnect(getString(R.string.status_background_failed))
                 stopSelf()
             }
         } else if (started && CallNotificationState.validAction(intent?.getStringExtra(TOKEN), engine.actionToken)) {
@@ -165,7 +165,7 @@ class CallService : Service() {
         if ((engine.state.connected || engine.state.connecting) && engine.state.room == room && engine.state.role == role) return
         switching = true
         if (engine.state.connected || engine.state.connecting) {
-            if (engine.state.role == "receiver") engine.leave() else engine.disconnect("Переключаем адрес…")
+            if (engine.state.role == "receiver") engine.leave() else engine.disconnect(getString(R.string.status_switching_address))
         }
         if (role == "caller") PushCalls.disable(this)
         engine.connect(room, role, resumeCall)
@@ -211,17 +211,17 @@ class CallService : Service() {
         .setColor(0xff3454d1.toInt())
 
     private fun incomingNotification(): Notification {
-        val builder = base(INCOMING_CHANNEL).setContentTitle("Входящий звонок Skepticall")
-            .setContentText("Собеседник ожидает ответа")
+        val builder = base(INCOMING_CHANNEL).setContentTitle(getString(R.string.notif_incoming_title))
+            .setContentText(getString(R.string.notif_incoming_text))
             .setCategory(Notification.CATEGORY_CALL)
             .setTimeoutAfter(70000)
         // Answer goes to the service so accept works even when the activity is not resumed
         // (OEM battery policies, lock screen). Decline stays on the service path too.
         if (Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName("Собеседник Skepticall").setImportant(true).build(), command(DECLINE), command(ANSWER)))
+            builder.setStyle(Notification.CallStyle.forIncomingCall(Person.Builder().setName(getString(R.string.notif_peer_name)).setImportant(true).build(), command(DECLINE), command(ANSWER)))
         } else {
-            builder.addAction(Notification.Action.Builder(null, "Отклонить", command(DECLINE)).build())
-                .addAction(Notification.Action.Builder(null, "Ответить", command(ANSWER)).build())
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.decline), command(DECLINE)).build())
+                .addAction(Notification.Action.Builder(null, getString(R.string.answer), command(ANSWER)).build())
         }
         // Full-screen / tap still opens the activity so the user can see the call UI.
         if (Build.VERSION.SDK_INT < 34 || notifications.canUseFullScreenIntent()) builder.setFullScreenIntent(open(ANSWER), true)
@@ -229,13 +229,13 @@ class CallService : Service() {
     }
 
     private fun sessionNotification(message: String): Notification {
-        val builder = base(SESSION_CHANNEL).setContentTitle(if (engine.state.inCall) "Разговор Skepticall" else "Skepticall на связи")
+        val builder = base(SESSION_CHANNEL).setContentTitle(if (engine.state.inCall) getString(R.string.notif_ongoing_title) else getString(R.string.notif_session_title))
             .setContentText(message)
             .setCategory(if (engine.state.busy) Notification.CATEGORY_CALL else Notification.CATEGORY_SERVICE)
         if (engine.state.inCall && Build.VERSION.SDK_INT >= 31) {
-            builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName("Собеседник Skepticall").build(), command(HANGUP)))
+            builder.setStyle(Notification.CallStyle.forOngoingCall(Person.Builder().setName(getString(R.string.notif_peer_name)).build(), command(HANGUP)))
         } else if (engine.state.busy) {
-            builder.addAction(Notification.Action.Builder(null, "Завершить", command(HANGUP)).build())
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.notif_hangup), command(HANGUP)).build())
         } else builder.addAction(Notification.Action.Builder(null, "Отключить входящие", command(LEAVE)).build())
         return builder.build()
     }

@@ -19,20 +19,20 @@ class CaptureService : Service() {
         if (worker != null || intent == null) return START_NOT_STICKY
         try {
             val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(NotificationChannel("capture", "Проверка микрофона", NotificationManager.IMPORTANCE_LOW))
+            manager.createNotificationChannel(NotificationChannel("capture", getString(R.string.notif_channel_capture), NotificationManager.IMPORTANCE_LOW))
             val stop = PendingIntent.getService(this, 1, Intent(this, CaptureService::class.java).setAction("STOP"), PendingIntent.FLAG_IMMUTABLE)
             val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-            val notification = Notification.Builder(this, "capture").setContentTitle("Идёт запись с микрофона")
-                .setContentText("Запись остановится через 30 секунд").setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentIntent(open).setOngoing(true).addAction(android.R.drawable.ic_media_pause, "Остановить", stop).build()
+            val notification = Notification.Builder(this, "capture").setContentTitle(getString(R.string.notif_recording_title))
+                .setContentText(getString(R.string.notif_recording_text)).setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentIntent(open).setOngoing(true).addAction(android.R.drawable.ic_media_pause, getString(R.string.notif_stop), stop).build()
             if (Build.VERSION.SDK_INT >= 29) startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             else startForeground(1, notification)
         } catch (_: Exception) {
-            CaptureState.update { it.copy(active = false, status = "Не удалось включить микрофон. Разрешите доступ к нему и повторите попытку в открытом приложении.") }
+            CaptureState.update { it.copy(active = false, status = getString(R.string.mic_enable_failed)) }
             stopSelf(); return START_NOT_STICKY
         }
         running = true
-        CaptureState.update { Snapshot(active = true, status = "Включаем микрофон…") }
+        CaptureState.update { Snapshot(active = true, status = getString(R.string.mic_enabling)) }
         worker = Thread({ capture(intent) }, "microphone-capture").also { it.start() }
         return START_NOT_STICKY
     }
